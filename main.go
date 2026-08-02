@@ -70,7 +70,29 @@ func runCmd(bin string, workingDir string, args ...string) (string, error) {
 // Linux; the Windows installer does not touch PATH but sets
 // VBOX_MSI_INSTALL_PATH (older versions: VBOX_INSTALL_PATH), with the
 // Program Files default as a last resort.
-var vboxManage = sync.OnceValue(func() string {
+var vboxManageCache struct {
+	sync.Mutex
+	path string
+}
+
+// resetVBoxManageCache forces re-discovery (after install_virtualbox).
+func resetVBoxManageCache() {
+	vboxManageCache.Lock()
+	vboxManageCache.path = ""
+	vboxManageCache.Unlock()
+}
+
+func vboxManage() string {
+	vboxManageCache.Lock()
+	defer vboxManageCache.Unlock()
+	if vboxManageCache.path != "" {
+		return vboxManageCache.path
+	}
+	vboxManageCache.path = findVBoxManage()
+	return vboxManageCache.path
+}
+
+func findVBoxManage() string {
 	if p, err := exec.LookPath("VBoxManage"); err == nil {
 		return p
 	}
@@ -90,7 +112,7 @@ var vboxManage = sync.OnceValue(func() string {
 	}
 	// Fall through to the bare name so the eventual error names the binary.
 	return "VBoxManage"
-})
+}
 
 func fileExists(p string) bool {
 	st, err := os.Stat(p)
@@ -634,14 +656,24 @@ func applianceTool(_ context.Context, _ *mcp.CallToolRequest, in applianceIn) (*
 // --------------------------------------------------------------------- system
 
 type systemIn struct {
-	Action string   `json:"action" jsonschema:"set_property|extpack|update_check|usb_filter|usb_dev_source|debug_vm|obj_tracker"`
-	Key    string   `json:"key,omitempty" jsonschema:"property name for set_property"`
-	Value  string   `json:"value,omitempty" jsonschema:"property value for set_property"`
-	Args   []string `json:"args,omitempty" jsonschema:"subcommand and flags for the other actions"`
+	Action  string   `json:"action" jsonschema:"set_property|extpack|update_check|usb_filter|usb_dev_source|debug_vm|obj_tracker|host_check|install_virtualbox"`
+	Key     string   `json:"key,omitempty" jsonschema:"property name for set_property"`
+	Value   string   `json:"value,omitempty" jsonschema:"property value for set_property"`
+	Version string   `json:"version,omitempty" jsonschema:"install_virtualbox: pin a VirtualBox version (default: Oracle's LATEST-STABLE)"`
+	DryRun  bool     `json:"dry_run,omitempty" jsonschema:"install_virtualbox: report platform, resolved version, asset, and sha256 without downloading or installing"`
+	Args    []string `json:"args,omitempty" jsonschema:"subcommand and flags for the other actions"`
 }
 
-func systemTool(_ context.Context, _ *mcp.CallToolRequest, in systemIn) (*mcp.CallToolResult, any, error) {
+func systemTool(ctx context.Context, _ *mcp.CallToolRequest, in systemIn) (*mcp.CallToolResult, any, error) {
 	switch in.Action {
+	case "host_check":
+		return text(hostCheck()), nil, nil
+	case "install_virtualbox":
+		out, err := installVirtualBox(ctx, installVBoxIn{Version: in.Version, DryRun: in.DryRun})
+		if err != nil {
+			return nil, nil, err
+		}
+		return text(out), nil, nil
 	case "set_property":
 		key, err := need(in.Key, "key", in.Action)
 		if err != nil {
@@ -886,7 +918,7 @@ Node IPs on a NAT network: get the VM's MAC from vm_info action=show, then execu
 Vagrant-sourced images (.ovf) boot with the box's stock credentials (usually vagrant/vagrant) — advise users to change them.`
 
 func main() {
-	server := mcp.NewServer(&mcp.Implementation{Name: "virtualbox-mcp-server", Version: "2.4.0"},
+	server := mcp.NewServer(&mcp.Implementation{Name: "virtualbox-mcp-server", Version: "2.5.0"},
 		&mcp.ServerOptions{Instructions: serverInstructions})
 
 	mcp.AddTool(server, &mcp.Tool{Name: "vm_lifecycle", Description: "VM lifecycle: create/register/unregister/clone/move/start VMs and control running ones. 'control' sends any controlvm subcommand (acpipowerbutton, poweroff, pause, resume, reset, savestate, …) via control_cmd. 'unattended_install' drives unattended guest OS install (pass flags in args)."}, vmLifecycle)
@@ -897,7 +929,7 @@ func main() {
 	mcp.AddTool(server, &mcp.Tool{Name: "snapshot", Description: "Snapshots: take/delete/restore/restore_current/list/edit for a VM."}, snapshotTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "guest", Description: "Guest interaction (needs Guest Additions for guestcontrol): run commands in the guest, copy files to/from, mkdir/rm/stat; guest properties get/set/delete/enumerate/wait; shared folders add/remove. guestcontrol needs --username/--password in args."}, guestTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "appliance", Description: "Appliances & cloud: import/export OVA/OVF (file_path + flags in args), sign an OVA (signova), and Oracle cloud integration (cloud/cloudprofile subcommands via args)."}, applianceTool)
-	mcp.AddTool(server, &mcp.Tool{Name: "system", Description: "Host/system administration: global properties (setproperty), extension packs (extpack install/uninstall/cleanup), update checks, USB filters & device sources, VM debugging (debugvm), object tracker. Subcommand flags via args."}, systemTool)
+	mcp.AddTool(server, &mcp.Tool{Name: "system", Description: "Host/system administration: host_check (is VirtualBox installed? platform report), install_virtualbox (self-install from Oracle's official mirror, SHA256SUMS-verified, per-platform: macOS admin dialog / Linux deb-rpm-run via passwordless sudo / Windows silent installer; dry_run previews), global properties (setproperty), extension packs, update checks, USB filters & device sources, VM debugging, object tracker."}, systemTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "execute_command", Description: "Raw escape hatch: run any VBoxManage command verbatim (without the 'VBoxManage' prefix). Quote arguments containing spaces. The only route to 'internalcommands' (use with care — those can corrupt VM configs)."}, execTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "download_file", Description: "Download a file over HTTPS to a local path (ISO images, appliance OVAs, checksums). Streams to dest_path creating parent directories; verifies sha256 when provided; no-op if the file already exists with a matching checksum."}, downloadTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "image", Description: "Official, maintained OS image catalog. action=catalog lists sources (talos, talos-iso, ubuntu, ubuntu-cloud, debian, fedora, rocky, alma, opensuse, freebsd, kali, turnkey-core, windows-dev, or vagrant:org/box passthrough). action=fetch resolves a version, downloads with checksum verification where the publisher provides one, extracts Vagrant boxes to an importable .ovf, and returns the local path. Idempotent; dry_run resolves without downloading."}, imageTool)
