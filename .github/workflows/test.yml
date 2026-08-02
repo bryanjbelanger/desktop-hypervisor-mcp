@@ -1,0 +1,26 @@
+name: Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: arc-runner-set
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      # Validates the release config and cross-compiles every platform
+      # without publishing — the "snapshot in CI, not in a pre-commit hook"
+      # half of the release safety net.
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          args: release --snapshot --clean
