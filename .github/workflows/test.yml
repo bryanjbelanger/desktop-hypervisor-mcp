@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   test:
-    runs-on: arc-runner-set
+    runs-on: arc-runner-set-vbox-mcp
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

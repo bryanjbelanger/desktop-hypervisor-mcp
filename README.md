@@ -26,7 +26,8 @@ One MCP tool per VBoxManage command would mean ~51 tools: thousands of wasted co
 | `execute_command` | (raw command string) | anything, incl. `internalcommands` (⚠ dangerous — can corrupt VM configs) |
 | `download_file` | (url, dest_path, sha256) | — (HTTPS file fetch for ISOs/OVAs: streams to disk, verifies sha256, idempotent) |
 | `image` | catalog, fetch (name, version, dry_run) | — (official OS image catalog: Talos, Ubuntu, Debian, Fedora, Rocky, Alma, CentOS Stream, openSUSE, FreeBSD, Kali, TurnKey, Windows dev, plus `vagrant:org/box` passthrough; checksum-verified where published; Vagrant boxes auto-extract to importable .ovf) |
-| `talosctl` | (args, version, resolve, working_dir) | — (runs talosctl; prefers existing PATH install, else auto-installs the right binary for this OS/arch, digest-verified) |
+
+OS-specific orchestration deliberately lives elsewhere: Talos/Kubernetes operations are the companion [talos-mcp-server](https://github.com/bryanjbelanger/talos-mcp-server)'s job — this server stays hypervisor-generic.
 
 Every command listed by `VBoxManage commands` (7.2.14) is reachable; `internalcommands` is deliberately raw-only.
 
@@ -54,7 +55,7 @@ Verify with `claude mcp list` (should show `✔ Connected`), then restart Claude
 
 ## Zero-question operation
 
-The server ships its own usage recipes to the client in the MCP initialize handshake (`instructions`), so a fresh session can build a full Talos Kubernetes cluster — network, image fetch, node import, boot, talosctl — without asking the user for URLs, checksums, platform details, or paths. Image sources are pinned in the server (OVAs from this project's appliance releases, ISOs and talosctl from official Sidero releases) and every download is verified against GitHub's asset digest automatically.
+The server ships its own usage recipes to the client in the MCP initialize handshake (`instructions`), so a fresh session can provision VMs from official OS images — network, image fetch, appliance import, boot — without asking the user for URLs, checksums, platform details, or paths. Image sources are pinned in the catalog and every download is verified wherever the publisher provides a checksum.
 
 Claude Code's own per-tool permission prompts are separate — they belong to the user's security settings, not this server. Users who want fully unattended runs can allowlist, e.g. in `.claude/settings.json`:
 
@@ -70,7 +71,7 @@ Claude Code's own per-tool permission prompts are separate — they belong to th
 }
 ```
 
-Keeping mutating tools (`vm_lifecycle`, `storage`, `execute_command`, `talosctl`) behind prompts is recommended; allowlist them too only if you accept unattended VM mutation.
+Keeping mutating tools (`vm_lifecycle`, `storage`, `execute_command`) behind prompts is recommended; allowlist them too only if you accept unattended VM mutation.
 
 ## The image catalog
 
