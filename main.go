@@ -23,8 +23,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/shlex"
@@ -64,9 +66,40 @@ func runCmd(bin string, workingDir string, args ...string) (string, error) {
 	return out, nil
 }
 
+// vboxManage locates the VBoxManage executable once. PATH covers macOS and
+// Linux; the Windows installer does not touch PATH but sets
+// VBOX_MSI_INSTALL_PATH (older versions: VBOX_INSTALL_PATH), with the
+// Program Files default as a last resort.
+var vboxManage = sync.OnceValue(func() string {
+	if p, err := exec.LookPath("VBoxManage"); err == nil {
+		return p
+	}
+	if runtime.GOOS == "windows" {
+		for _, env := range []string{"VBOX_MSI_INSTALL_PATH", "VBOX_INSTALL_PATH"} {
+			if dir := os.Getenv(env); dir != "" {
+				if p := filepath.Join(dir, "VBoxManage.exe"); fileExists(p) {
+					return p
+				}
+			}
+		}
+		if pf := os.Getenv("ProgramFiles"); pf != "" {
+			if p := filepath.Join(pf, "Oracle", "VirtualBox", "VBoxManage.exe"); fileExists(p) {
+				return p
+			}
+		}
+	}
+	// Fall through to the bare name so the eventual error names the binary.
+	return "VBoxManage"
+})
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
+}
+
 // vbox runs a VBoxManage command and returns its output.
 func vbox(args ...string) (string, error) {
-	return runCmd("VBoxManage", "", args...)
+	return runCmd(vboxManage(), "", args...)
 }
 
 func text(s string) *mcp.CallToolResult {
