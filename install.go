@@ -20,25 +20,43 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const vboxMirror = "https://download.virtualbox.org/virtualbox/"
 
 func installFetchText(ctx context.Context, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
+	// Retry transient failures: virtualized NAT DNS proxies (VMware vmnat is
+	// a known case) intermittently drop responses to Go's parallel A/AAAA
+	// lookups, so a single attempt is flaky in exactly the environments this
+	// action targets.
+	var lastErr error
+	for attempt := 0; attempt < 4; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(time.Duration(attempt) * 2 * time.Second):
+			}
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return "", err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode != 200 {
+			resp.Body.Close()
+			return "", fmt.Errorf("GET %s: %s", url, resp.Status)
+		}
+		b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		return string(b), err
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("GET %s: %s", url, resp.Status)
-	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return string(b), err
+	return "", fmt.Errorf("after 4 attempts: %w", lastErr)
 }
 
 type osRelease struct{ ID, IDLike, VersionID, Codename string }
@@ -185,9 +203,64 @@ type installVBoxIn struct {
 	DryRun  bool
 }
 
+// linuxEnsureKernelModule builds/loads vboxdrv when VBoxManage reports it
+// missing: install matching kernel headers, then run Oracle's vboxconfig.
+func linuxEnsureKernelModule(versionOut string) string {
+	if runtime.GOOS != "linux" || !strings.Contains(versionOut, "vboxdrv") {
+		return ""
+	}
+	kernel, _ := runCmd("uname", "", "-r")
+	var log []string
+	if _, err := exec.LookPath("apt-get"); err == nil {
+		out, err := sudoN("apt-get install -y linux-headers-"+kernel,
+			"apt-get", "install", "-y", "linux-headers-"+kernel)
+		if err != nil {
+			out2, _ := sudoN("apt-get install -y linux-headers-amd64",
+				"apt-get", "install", "-y", "linux-headers-amd64")
+			out += " | fallback: " + out2
+		}
+		log = append(log, "headers: "+lastLine(out))
+	} else if _, err := exec.LookPath("dnf"); err == nil {
+		out, err := sudoN("dnf install -y kernel-devel-"+kernel+" gcc make perl elfutils-libelf-devel",
+			"dnf", "install", "-y", "kernel-devel-"+kernel, "gcc", "make", "perl", "elfutils-libelf-devel")
+		if err != nil {
+			out2, _ := sudoN("dnf install -y kernel-devel gcc make perl elfutils-libelf-devel",
+				"dnf", "install", "-y", "kernel-devel", "gcc", "make", "perl", "elfutils-libelf-devel")
+			out += " | fallback: " + out2
+		}
+		log = append(log, "headers: "+lastLine(out))
+	}
+	// Headers only help if they match the RUNNING kernel; distro repos drop
+	// old versions, so a stale kernel may have no installable match.
+	if _, err := os.Stat("/usr/src/kernels/" + kernel); err != nil {
+		if _, err := os.Stat("/lib/modules/" + kernel + "/build"); err != nil {
+			log = append(log, fmt.Sprintf("NO HEADERS MATCH the running kernel %s (repos likely dropped it) — upgrade the kernel and reboot, then rerun install_virtualbox", kernel))
+			return "kernel module: " + strings.Join(log, "; ")
+		}
+	}
+	out, err := sudoN("/sbin/vboxconfig", "/sbin/vboxconfig")
+	if err != nil {
+		log = append(log, "vboxconfig FAILED: "+err.Error())
+	} else {
+		log = append(log, "vboxconfig: "+lastLine(out))
+	}
+	return "kernel module: " + strings.Join(log, "; ")
+}
+
+func lastLine(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	return lines[len(lines)-1]
+}
+
 func installVirtualBox(ctx context.Context, in installVBoxIn) (string, error) {
 	if p, err := exec.LookPath("VBoxManage"); err == nil && !in.DryRun {
 		v, _ := runCmd(p, "", "--version")
+		// Installed but module missing (headers absent at install time) is
+		// still broken — repair rather than declare success.
+		if fix := linuxEnsureKernelModule(v); fix != "" {
+			v2, _ := runCmd(p, "", "--version")
+			return fmt.Sprintf("VirtualBox already installed: %s\n%s\nversion now: %s", p, fix, v2), nil
+		}
 		return fmt.Sprintf("VirtualBox already installed: %s (%s) — nothing to do", p, v), nil
 	}
 
@@ -266,6 +339,9 @@ func installVirtualBox(ctx context.Context, in installVBoxIn) (string, error) {
 	case "linux":
 		switch {
 		case strings.HasSuffix(dest, ".deb"):
+			// Fresh images ship stale package indexes; installing the deb's
+			// dependencies against them 404s on moved mirror versions.
+			_, _ = sudoN("apt-get update", "apt-get", "update")
 			out, err = sudoN("apt-get install -y "+dest, "apt-get", "install", "-y", dest)
 		case strings.HasSuffix(dest, ".rpm"):
 			out, err = sudoN("dnf install -y "+dest, "dnf", "install", "-y", dest)
@@ -287,7 +363,12 @@ func installVirtualBox(ctx context.Context, in installVBoxIn) (string, error) {
 	if verr != nil {
 		return "", fmt.Errorf("install ran but VBoxManage still not found: %v", verr)
 	}
-	return fmt.Sprintf("installed VirtualBox %s\n%s\nVBoxManage --version: %s\n%s", version, plan, verify, out), nil
+	extra := linuxEnsureKernelModule(verify)
+	if extra != "" {
+		verify2, _ := vbox("--version")
+		extra += "\nversion after module fix: " + verify2
+	}
+	return fmt.Sprintf("installed VirtualBox %s\n%s\nVBoxManage --version: %s\n%s\n%s", version, plan, verify, out, extra), nil
 }
 
 func hostCheck() string {

@@ -53,6 +53,11 @@ func runCmd(bin string, workingDir string, args ...string) (string, error) {
 		if msg == "" {
 			msg = strings.TrimSpace(stdout.String())
 		}
+		if msg == "" {
+			// Nothing on either stream (e.g. exec failure) — the OS error is
+			// all there is; losing it makes failures undebuggable.
+			msg = err.Error()
+		}
 		return "", fmt.Errorf("%s %s failed: %s", name, args[0], msg)
 	}
 	out := strings.TrimSpace(stdout.String())
