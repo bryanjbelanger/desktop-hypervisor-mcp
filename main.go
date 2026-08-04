@@ -141,7 +141,7 @@ func providerTool(ctx context.Context, _ *mcp.CallToolRequest, in providerIn) (*
 // --------------------------------------------------------------- vm_lifecycle
 
 type lifecycleIn struct {
-	Action   string `json:"action" jsonschema:"create|start|stop|delete|clone|import|export"`
+	Action   string `json:"action" jsonschema:"create|start|stop|suspend|reset|delete|clone|import|export"`
 	Provider string `json:"provider,omitempty" jsonschema:"provider id; defaults to the only ready one"`
 	VM       string `json:"vm,omitempty" jsonschema:"VM name"`
 	CPUs     int    `json:"cpus,omitempty" jsonschema:"create: vCPUs (default 2)"`
@@ -151,7 +151,7 @@ type lifecycleIn struct {
 	Firmware string `json:"firmware,omitempty" jsonschema:"create: efi|bios (provider default when empty)"`
 	Nested   bool   `json:"nested_virt,omitempty" jsonschema:"create: enable nested virtualization"`
 	GUI      bool   `json:"gui,omitempty" jsonschema:"start: show the console window (default headless)"`
-	Hard     bool   `json:"hard,omitempty" jsonschema:"stop: power off instead of guest shutdown"`
+	Hard     bool   `json:"hard,omitempty" jsonschema:"stop/reset: force it, skipping the guest-OS path"`
 	Dest     string `json:"dest,omitempty" jsonschema:"clone: new VM name; export: output .ova path"`
 	Snapshot string `json:"snapshot,omitempty" jsonschema:"clone: source snapshot"`
 	Linked   bool   `json:"linked,omitempty" jsonschema:"clone: linked clone"`
@@ -172,6 +172,10 @@ func lifecycleTool(ctx context.Context, _ *mcp.CallToolRequest, in lifecycleIn) 
 		return out(o.Start(ctx, in.VM, in.GUI))
 	case "stop":
 		return out(o.Stop(ctx, in.VM, in.Hard))
+	case "suspend":
+		return out(o.Suspend(ctx, in.VM))
+	case "reset":
+		return out(o.Reset(ctx, in.VM, in.Hard))
 	case "delete":
 		return out(o.Delete(ctx, in.VM))
 	case "clone":
@@ -252,6 +256,8 @@ type snapshotIn struct {
 	Provider string `json:"provider,omitempty" jsonschema:"provider id; defaults to the only ready one"`
 	VM       string `json:"vm" jsonschema:"VM name"`
 	Name     string `json:"name,omitempty" jsonschema:"snapshot name (restore: empty = most recent on VirtualBox)"`
+	Tree     bool   `json:"tree,omitempty" jsonschema:"list: show the hierarchy"`
+	Children bool   `json:"children,omitempty" jsonschema:"delete: cascade to child snapshots (VMware only)"`
 }
 
 func snapshotTool(ctx context.Context, _ *mcp.CallToolRequest, in snapshotIn) (*mcp.CallToolResult, any, error) {
@@ -265,9 +271,9 @@ func snapshotTool(ctx context.Context, _ *mcp.CallToolRequest, in snapshotIn) (*
 	case "restore":
 		return out(o.SnapshotRestore(ctx, in.VM, in.Name))
 	case "delete":
-		return out(o.SnapshotDelete(ctx, in.VM, in.Name))
+		return out(o.SnapshotDelete(ctx, in.VM, in.Name, in.Children))
 	case "list":
-		return out(o.SnapshotList(ctx, in.VM))
+		return out(o.SnapshotList(ctx, in.VM, in.Tree))
 	}
 	return nil, nil, fmt.Errorf("unknown action %q", in.Action)
 }
@@ -275,10 +281,12 @@ func snapshotTool(ctx context.Context, _ *mcp.CallToolRequest, in snapshotIn) (*
 // --------------------------------------------------------------------- guest
 
 type guestIn struct {
-	Action   string   `json:"action" jsonschema:"exec|copy_in|copy_out|screenshot"`
+	Action   string   `json:"action" jsonschema:"exec|script|copy_in|copy_out|screenshot"`
 	Provider string   `json:"provider,omitempty" jsonschema:"provider id; defaults to the only ready one"`
 	VM       string   `json:"vm" jsonschema:"VM name"`
 	Program  string   `json:"program,omitempty" jsonschema:"exec: absolute program path in the guest"`
+	Script   string   `json:"script,omitempty" jsonschema:"script: script text for the interpreter"`
+	Interp   string   `json:"interpreter,omitempty" jsonschema:"script: guest interpreter (default /bin/bash; Windows: powershell.exe path)"`
 	Args     []string `json:"args,omitempty" jsonschema:"exec: program arguments"`
 	Src      string   `json:"src,omitempty" jsonschema:"copy_in: host path; copy_out: guest path"`
 	Dest     string   `json:"dest,omitempty" jsonschema:"copy_in: guest path; copy_out/screenshot: host path"`
@@ -292,6 +300,8 @@ func guestTool(ctx context.Context, _ *mcp.CallToolRequest, in guestIn) (*mcp.Ca
 	switch in.Action {
 	case "exec":
 		return out(o.GuestExec(ctx, in.VM, in.Program, in.Args))
+	case "script":
+		return out(o.GuestScript(ctx, in.VM, in.Interp, in.Script))
 	case "copy_in":
 		return out(o.GuestCopyIn(ctx, in.VM, in.Src, in.Dest))
 	case "copy_out":
@@ -305,7 +315,7 @@ func guestTool(ctx context.Context, _ *mcp.CallToolRequest, in guestIn) (*mcp.Ca
 // ------------------------------------------------------------------- network
 
 type networkIn struct {
-	Action    string `json:"action" jsonschema:"ensure_cluster_network|expose_guest_port|make_iso"`
+	Action    string `json:"action" jsonschema:"ensure_cluster_network|expose_guest_port|make_iso|repack_iso"`
 	Provider  string `json:"provider,omitempty" jsonschema:"provider id; defaults to the only ready one"`
 	Name      string `json:"name,omitempty" jsonschema:"cluster network name (default cluster-net; VMware always uses vmnet8)"`
 	CIDR      string `json:"cidr,omitempty" jsonschema:"ensure_cluster_network: subnet (default 192.168.100.0/24)"`
@@ -316,9 +326,16 @@ type networkIn struct {
 	SrcDir    string `json:"src_dir,omitempty" jsonschema:"make_iso: host directory to pack"`
 	Dest      string `json:"dest,omitempty" jsonschema:"make_iso: output .iso path"`
 	Label     string `json:"label,omitempty" jsonschema:"make_iso: volume label (OEMDRV for kickstart)"`
+	ISO       string `json:"iso,omitempty" jsonschema:"repack_iso: source installer .iso"`
+	BootArgs  string `json:"boot_args,omitempty" jsonschema:"repack_iso: kernel args added to every GRUB linux line (e.g. 'autoinstall ds=nocloud')"`
+	GrubCfg   string `json:"grub_cfg,omitempty" jsonschema:"repack_iso: GRUB config path inside the ISO (default /boot/grub/grub.cfg)"`
 }
 
 func networkTool(ctx context.Context, _ *mcp.CallToolRequest, in networkIn) (*mcp.CallToolResult, any, error) {
+	// Host-side ISO surgery is identical on every provider — no selection.
+	if in.Action == "repack_iso" {
+		return out(provider.RepackISO(ctx, in.ISO, in.Dest, in.BootArgs, in.GrubCfg))
+	}
 	o, err := selectOps(ctx, in.Provider)
 	if err != nil {
 		return nil, nil, err
@@ -383,17 +400,17 @@ func main() {
 	mcp.AddTool(server, &mcp.Tool{Name: "provider",
 		Description: "Hypervisor discovery and artifact resolution. list: providers with status, capabilities, formats, remediation. resolve: pick the right artifact for an image on the selected provider."}, providerTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "vm_lifecycle",
-		Description: "Create, start, stop, delete, clone (optionally linked/from snapshot), import (ova/ovf/vmx), export (ova)."}, lifecycleTool)
+		Description: "Create, start, stop, suspend (start resumes), reset, delete, clone (optionally linked/from snapshot), import (ova/ovf/vmx), export (ova)."}, lifecycleTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "vm_info",
 		Description: "Read-only: list all VMs, running VMs, show one VM, or resolve a guest IP (in-guest tools, else hypervisor DHCP leases by MAC — works for agentless guests like Talos)."}, infoTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "vm_config",
 		Description: "Configure a VM: resources (cpus/memory), nested_virt, attach_iso (empty path detaches), guestinfo (pre-boot key/value config; VMware only — inverts Talos bring-up order)."}, configTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "snapshot",
-		Description: "Snapshots: take, restore, delete, list."}, snapshotTool)
+		Description: "Snapshots: take, restore, delete (children=true cascades on VMware), list (tree=true for hierarchy)."}, snapshotTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "guest",
-		Description: "Inside a running guest (agent required; credentials from server env, never parameters): exec, copy_in, copy_out, screenshot."}, guestTool)
+		Description: "Inside a running guest (agent required; credentials from server env, never parameters): exec, script (interpreter + text — the one-liner path), copy_in, copy_out, screenshot."}, guestTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "network",
-		Description: "Intent-based networking: ensure_cluster_network (shared NAT with DHCP), expose_guest_port (host→guest forward), make_iso (kickstart/seed ISOs). Native network mechanism stays behind execute_command."}, networkTool)
+		Description: "Intent-based networking: ensure_cluster_network (shared NAT with DHCP), expose_guest_port (host→guest forward), make_iso (kickstart/seed ISOs), repack_iso (add kernel args to an installer ISO\u2019s GRUB — Ubuntu autoinstall). Native network mechanism stays behind execute_command."}, networkTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "execute_command",
 		Description: "Raw provider escape hatch: full argv for VBoxManage or vmrun on the selected provider."}, execTool)
 
