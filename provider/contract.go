@@ -71,17 +71,26 @@ const (
 	CapIPFromDHCP    Capability = "ip_from_dhcp"  // resolve guest IP by MAC from hypervisor DHCP state
 	CapIPFromTools   Capability = "ip_from_tools" // resolve guest IP via in-guest agent
 	CapCaptureScreen Capability = "capture_screen"
+
+	// CapGuestinfoConfig means the provider can inject configuration into a
+	// guest before first boot, via hypervisor-level key/value pairs the guest
+	// reads at startup (VMware guestinfo.* in the .vmx). Providers without it
+	// must deliver configuration over the network after the guest has booted
+	// into some maintenance mode, which requires discovering its IP first.
+	// This inverts the bring-up sequence, so it is a contract member rather
+	// than an implementation detail.
+	CapGuestinfoConfig Capability = "guestinfo_config"
 )
 
 // ImageFormat is an artifact container a provider can consume directly.
 type ImageFormat string
 
 const (
-	FormatOVA ImageFormat = "ova"
-	FormatOVF ImageFormat = "ovf"
-	FormatISO ImageFormat = "iso"
-	FormatVMX ImageFormat = "vmx"
-	FormatVDI ImageFormat = "vdi"
+	FormatOVA  ImageFormat = "ova"
+	FormatOVF  ImageFormat = "ovf"
+	FormatISO  ImageFormat = "iso"
+	FormatVMX  ImageFormat = "vmx"
+	FormatVDI  ImageFormat = "vdi"
 	FormatVMDK ImageFormat = "vmdk"
 )
 
@@ -122,7 +131,7 @@ type Descriptor struct {
 	Capabilities []Capability  `json:"capabilities"`
 
 	// StorageFreeBytes is available space on the VM store, or -1 if unknown.
-	StorageFreeBytes int64 `json:"storage_free_bytes"`
+	StorageFreeBytes int64  `json:"storage_free_bytes"`
 	VMDir            string `json:"vm_dir,omitempty"`
 }
 

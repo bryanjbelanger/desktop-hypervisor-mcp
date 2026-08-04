@@ -54,6 +54,27 @@ So the artifact layer was a design task, not a mechanical move. That is what
 `core/artifact/resolve.go` now handles, and it is the concrete form of the
 "resolver selects per advertised capability" requirement.
 
+## Config delivery differs by provider — affects bring-up order
+
+Talos on VMware receives its machine config through a `.vmx` guestinfo key
+set before first boot:
+
+    guestinfo.talos.config = <base64 of controlplane.yaml>
+
+That removes the entire maintenance-mode round trip the VirtualBox flow
+needs. On VirtualBox the sequence is boot → wait for maintenance mode →
+discover IP → `apply_config insecure=true` → reboot. On VMware it is set
+key → boot → node is already configured, and the IP is only needed
+afterward for bootstrap and health.
+
+This is now `CapGuestinfoConfig` in the contract, because it inverts the
+order of operations rather than swapping one call for another. The
+`stand-up-talos` skill has to branch on it.
+
+The predecessor Fusion server already has the mechanism — its `configure`
+action sets an arbitrary `.vmx` key on a powered-off VM — so this is wiring,
+not new capability.
+
 ## Next — not started
 
 1. **Port the neutral tool surface.** Target ~8 tools: `vm_lifecycle`,
@@ -88,10 +109,20 @@ So the artifact layer was a design task, not a mechanical move. That is what
 
 ## Open questions — need verification before the contract hardens
 
-- **Does Talos's VMware image ship open-vm-tools?** Decides whether
-  `ip_from_tools` is ever usable for Talos nodes on Fusion/Workstation. The
-  contract does not depend on the answer because `ip_from_dhcp` is the
-  primary mechanism, but the answer changes what the skill can do.
+- ~~Does Talos's VMware image ship open-vm-tools?~~ **Answered.** It does
+  not, by default. Guest tools come from `talos-vmtoolsd`, an Image Factory
+  *extension* that must be baked into a custom image, and the Sidero guide
+  then runs it as a post-deployment daemonset. So `ip_from_tools` is
+  unavailable for a stock Talos node on Fusion/Workstation, and
+  `ip_from_dhcp` (vmnet lease file, keyed by MAC) is the only mechanism that
+  works out of the box. The contract was already built this way.
+
+- **Is the Talos vmware OVA importable into Fusion/Workstation?** The Sidero
+  guide targets vSphere/ESXi only (ESXi 6.7U2+, content libraries, govc). The
+  OVA may import into the desktop products with
+  `ovftool --lax --allowExtraConfig` — which the predecessor Fusion server
+  already passes — but that is unverified. `talos-iso` is the safe path on
+  desktop VMware until someone tries it. Recorded in the catalog Notes.
 - **`vmware-fusion-local` version reads `1.17.0.25388279`** — that is the
   vmrun version, not the Fusion product version. Fine for logging, wrong if
   anything gates on a product version.

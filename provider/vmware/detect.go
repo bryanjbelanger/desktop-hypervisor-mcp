@@ -162,6 +162,11 @@ func (Detector) Detect(ctx context.Context) []provider.Descriptor {
 		provider.CapIPFromDHCP,
 		// Port forwarding edits the vmnet NAT config, which needs elevation.
 		provider.CapPortForward,
+		// Arbitrary .vmx keys can be set before boot, which is how Talos
+		// receives its machine config on VMware: guestinfo.talos.config set
+		// to the base64 of controlplane.yaml. No network round-trip, no
+		// maintenance mode, no IP needed before the node configures itself.
+		provider.CapGuestinfoConfig,
 	}
 
 	// OVA support is conditional: ovftool ships with the hypervisor but is

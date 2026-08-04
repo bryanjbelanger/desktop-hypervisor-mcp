@@ -71,6 +71,9 @@ func Catalog() []Source {
 		{
 			Name: "talos", Kind: KindGitHubAsset,
 			Desc: "Talos Linux appliance (Kubernetes node OS)",
+			Notes: "the vmware OVA is published for vSphere/ESXi; importing it into " +
+				"Fusion/Workstation needs ovftool --lax --allowExtraConfig, and is " +
+				"unverified on the desktop products. Prefer talos-iso there until it is.",
 			Variants: []Variant{
 				{Family: "virtualbox", Locator: talosRepo,
 					Asset: "virtualbox-{arch}.ova", Format: provider.FormatOVA},
