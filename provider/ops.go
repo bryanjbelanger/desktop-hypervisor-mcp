@@ -64,6 +64,10 @@ type Ops interface {
 	Create(ctx context.Context, spec CreateSpec) (string, error)
 	Start(ctx context.Context, vm string, gui bool) (string, error)
 	Stop(ctx context.Context, vm string, hard bool) (string, error)
+	// Suspend saves state to disk; Start resumes. Reset is a reboot (hard
+	// skips the guest-OS shutdown path). Both exist natively on all providers.
+	Suspend(ctx context.Context, vm string) (string, error)
+	Reset(ctx context.Context, vm string, hard bool) (string, error)
 	Delete(ctx context.Context, vm string) (string, error)
 	Clone(ctx context.Context, spec CloneSpec) (string, error)
 	ImportImage(ctx context.Context, path, name string) (string, error)
@@ -79,16 +83,21 @@ type Ops interface {
 	// startup (CapGuestinfoConfig). Keys are passed as-is.
 	SetGuestinfo(ctx context.Context, vm string, kv map[string]string) (string, error)
 
-	// Snapshots. Verb is "restore" everywhere.
+	// Snapshots. Verb is "restore" everywhere. tree asks for the hierarchy
+	// (CapSnapshotTree); children cascades a delete where the provider can.
 	SnapshotTake(ctx context.Context, vm, name string) (string, error)
 	SnapshotRestore(ctx context.Context, vm, name string) (string, error)
-	SnapshotDelete(ctx context.Context, vm, name string) (string, error)
-	SnapshotList(ctx context.Context, vm string) (string, error)
+	SnapshotDelete(ctx context.Context, vm, name string, children bool) (string, error)
+	SnapshotList(ctx context.Context, vm string, tree bool) (string, error)
 
 	// Guest operations (CapGuestExec / CapGuestCopy*). Credentials come from
 	// the server process environment (HV_GUEST_USER / HV_GUEST_PASSWORD),
 	// never from tool parameters.
 	GuestExec(ctx context.Context, vm, program string, args []string) (string, error)
+	// GuestScript feeds script text to an interpreter in the guest — the
+	// workhorse for one-liners (bash, powershell.exe) where GuestExec's
+	// absolute-program-plus-args shape is too rigid.
+	GuestScript(ctx context.Context, vm, interpreter, script string) (string, error)
 	GuestCopyIn(ctx context.Context, vm, hostSrc, guestDest string) (string, error)
 	GuestCopyOut(ctx context.Context, vm, guestSrc, hostDest string) (string, error)
 	CaptureScreen(ctx context.Context, vm, hostDest string) (string, error)

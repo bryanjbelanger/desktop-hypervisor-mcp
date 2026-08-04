@@ -156,3 +156,46 @@ for less coverage). `go vet` clean, cross-compiles on all five targets.
   PR can execute on that machine.
 - **Rotate `VMRUN_GUEST_PASSWORD`.** It is in `~/.claude.json` in plaintext
   and has been readable for the life of that config.
+
+## Fold-in audit — vmware-fusion-mcp-server v0.3 coverage map (Aug 4 2026)
+
+Every predecessor action is now in exactly one of three buckets. Nothing is
+unaccounted for.
+
+**Neutral surface** (was already ported, or added by this audit — marked +):
+inventory→vm_info list · list→running · create · start/stop(gui,hard) ·
++suspend · +reset · clone(linked,snapshot) · delete · ip (tools→DHCP-lease
+fallback) · import_ova/export_ova (+`--allowExtraConfig` restored on export) ·
+attach_iso · make_iso · +repack_iso (provider-neutral, `provider.RepackISO`,
+xorriso-gated at runtime) · configure/write_var-pre-boot→vm_config guestinfo ·
+capture_screen (+creds now optional again, as in the predecessor) ·
+snapshot list(+tree)/take/revert→restore/delete(+children, VMware-only
+cascade) · guest run→exec · +script(interpreter) — VBox synthesizes via
+`-c`/`-Command` · copy_to/from→copy_in/out.
+
+**Deliberately raw** (`execute_command`; provider vocabulary diverges or the
+operation is niche): pause/unpause · upgradevm · installTools/checkToolsState ·
+connect/disconnectNamedDevice · read/writeVariable runtime scopes (guestVar on
+a RUNNING VM, guestEnv) · sharedfolder add/remove/set/enable/disable ·
+listHostNetworks · list/deletePortForwardings · network adapter
+add/set/delete (attach intent may be promoted later if workflows demand it) ·
+downloadPhotonVM · vmware-vdiskmanager beyond create.
+
+**Superseded**: guest file-management verbs (mkdir/rmdir/exists/list_dir/
+delete_file/rename/temp_file, processes/kill) — `script` covers all of them
+in one action; predecessor's 8 extra actions were context spent on what a
+shell one-liner does.
+
+Known predecessor behavior NOT carried: ovftool flag passthrough on
+import/export (Raw is vmrun-only). Open question: whether Raw grows a
+`tool: vmrun|ovftool` switch or ovftool flags stay unreachable.
+
+### Workstation parity fixes from the same audit
+
+vmrun's command set is identical across Fusion/Workstation (only `-T` and
+tool paths differ — already handled), but three host-layout assumptions were
+macOS-only and are now fixed: `.vmwarevm` bundle naming in Create/Clone/
+ImportImage (plain directory on Windows/Linux; resolveVMX tries both layouts);
+vmnet subnet detection reads `/etc/vmware/networking` on Linux (same format);
+lease paths were already per-GOOS. Untested on real Windows/Linux Workstation
+hosts — same caveat as the predecessors.

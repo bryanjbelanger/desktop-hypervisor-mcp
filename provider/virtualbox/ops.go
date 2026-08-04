@@ -177,6 +177,16 @@ func (o *Ops) Stop(ctx context.Context, vm string, hard bool) (string, error) {
 	return o.run(ctx, "controlvm", vm, sub)
 }
 
+func (o *Ops) Suspend(ctx context.Context, vm string) (string, error) {
+	return o.run(ctx, "controlvm", vm, "savestate")
+}
+
+// Reset is always hard on VirtualBox: controlvm reset is the platform's only
+// reboot verb (a soft reboot would need an in-guest command).
+func (o *Ops) Reset(ctx context.Context, vm string, hard bool) (string, error) {
+	return o.run(ctx, "controlvm", vm, "reset")
+}
+
 func (o *Ops) Delete(ctx context.Context, vm string) (string, error) {
 	return o.run(ctx, "unregistervm", vm, "--delete")
 }
@@ -267,11 +277,15 @@ func (o *Ops) SnapshotRestore(ctx context.Context, vm, name string) (string, err
 	return o.run(ctx, "snapshot", vm, "restore", name)
 }
 
-func (o *Ops) SnapshotDelete(ctx context.Context, vm, name string) (string, error) {
+func (o *Ops) SnapshotDelete(ctx context.Context, vm, name string, children bool) (string, error) {
+	if children {
+		return "", fmt.Errorf("VirtualBox cannot cascade-delete snapshots — delete children individually (snapshot list shows the tree)")
+	}
 	return o.run(ctx, "snapshot", vm, "delete", name)
 }
 
-func (o *Ops) SnapshotList(ctx context.Context, vm string) (string, error) {
+// SnapshotList's output is already hierarchical on VirtualBox; tree is a no-op.
+func (o *Ops) SnapshotList(ctx context.Context, vm string, tree bool) (string, error) {
 	return o.run(ctx, "snapshot", vm, "list")
 }
 
@@ -295,6 +309,20 @@ func (o *Ops) GuestExec(ctx context.Context, vm, program string, args []string) 
 	argv = append(argv, program)
 	argv = append(argv, args...)
 	return o.run(ctx, argv...)
+}
+
+// GuestScript runs script text through an interpreter. VirtualBox has no
+// script verb, so the interpreter is exec'd with its inline-command flag:
+// -Command for PowerShell, -c for POSIX shells.
+func (o *Ops) GuestScript(ctx context.Context, vm, interpreter, script string) (string, error) {
+	if interpreter == "" {
+		interpreter = "/bin/bash"
+	}
+	flag := "-c"
+	if strings.Contains(strings.ToLower(filepath.Base(interpreter)), "powershell") {
+		flag = "-Command"
+	}
+	return o.GuestExec(ctx, vm, interpreter, []string{flag, script})
 }
 
 func (o *Ops) GuestCopyIn(ctx context.Context, vm, hostSrc, guestDest string) (string, error) {

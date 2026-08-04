@@ -41,6 +41,16 @@ func (o *Ops) vmrun(ctx context.Context, withGuest bool, args ...string) (string
 	return provider.RunCmd(ctx, VmrunBin(), append(argv, args...)...)
 }
 
+// vmBundle returns the directory a VM named name lives in. The .vmwarevm
+// bundle suffix is a Fusion/macOS convention; Workstation on Windows and
+// Linux uses a plain directory.
+func (o *Ops) vmBundle(name string) string {
+	if runtime.GOOS == "darwin" {
+		return filepath.Join(o.desc.VMDir, name+".vmwarevm")
+	}
+	return filepath.Join(o.desc.VMDir, name)
+}
+
 // resolveVMX turns a VM name or path into a .vmx path.
 func (o *Ops) resolveVMX(vm string) (string, error) {
 	if vm == "" {
@@ -49,11 +59,11 @@ func (o *Ops) resolveVMX(vm string) (string, error) {
 	if strings.HasSuffix(vm, ".vmx") {
 		return vm, nil
 	}
-	bundle := vm
-	if !strings.HasSuffix(bundle, ".vmwarevm") {
-		bundle = filepath.Join(o.desc.VMDir, vm+".vmwarevm")
+	if m, _ := filepath.Glob(filepath.Join(o.vmBundle(vm), "*.vmx")); len(m) == 1 {
+		return m[0], nil
 	}
-	if m, _ := filepath.Glob(filepath.Join(bundle, "*.vmx")); len(m) == 1 {
+	// The other platform's layout, so a moved VM store still resolves.
+	if m, _ := filepath.Glob(filepath.Join(o.desc.VMDir, vm+".vmwarevm", "*.vmx")); len(m) == 1 {
 		return m[0], nil
 	}
 	if m, _ := filepath.Glob(filepath.Join(o.desc.VMDir, vm, "*.vmx")); len(m) == 1 {
@@ -229,7 +239,7 @@ func (o *Ops) Create(ctx context.Context, s provider.CreateSpec) (string, error)
 	if s.Name == "" {
 		return "", fmt.Errorf("name is required")
 	}
-	bundle := filepath.Join(o.desc.VMDir, s.Name+".vmwarevm")
+	bundle := o.vmBundle(s.Name)
 	if _, err := os.Stat(bundle); err == nil {
 		return "", fmt.Errorf("%s already exists", bundle)
 	}
@@ -306,6 +316,26 @@ func (o *Ops) Stop(ctx context.Context, vm string, hard bool) (string, error) {
 	return o.vmrun(ctx, false, "stop", vmx, mode)
 }
 
+func (o *Ops) Suspend(ctx context.Context, vm string) (string, error) {
+	vmx, err := o.resolveVMX(vm)
+	if err != nil {
+		return "", err
+	}
+	return o.vmrun(ctx, false, "suspend", vmx, "soft")
+}
+
+func (o *Ops) Reset(ctx context.Context, vm string, hard bool) (string, error) {
+	vmx, err := o.resolveVMX(vm)
+	if err != nil {
+		return "", err
+	}
+	mode := "soft"
+	if hard {
+		mode = "hard"
+	}
+	return o.vmrun(ctx, false, "reset", vmx, mode)
+}
+
 func (o *Ops) Delete(ctx context.Context, vm string) (string, error) {
 	vmx, err := o.resolveVMX(vm)
 	if err != nil {
@@ -319,7 +349,7 @@ func (o *Ops) Clone(ctx context.Context, s provider.CloneSpec) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	destBundle := filepath.Join(o.desc.VMDir, s.Dest+".vmwarevm")
+	destBundle := o.vmBundle(s.Dest)
 	if err := os.MkdirAll(destBundle, 0o755); err != nil {
 		return "", err
 	}
@@ -348,7 +378,7 @@ func (o *Ops) ImportImage(ctx context.Context, path, name string) (string, error
 	}
 	dest := o.desc.VMDir
 	if name != "" {
-		dest = filepath.Join(o.desc.VMDir, name+".vmwarevm")
+		dest = o.vmBundle(name)
 	}
 	// --lax --allowExtraConfig: cross-hypervisor OVAs carry descriptors ovftool
 	// would otherwise reject outright.
@@ -366,7 +396,7 @@ func (o *Ops) ExportOVA(ctx context.Context, vm, dest string) (string, error) {
 	if err := o.ensureOff(ctx, vmx); err != nil {
 		return "", err
 	}
-	return provider.RunCmd(ctx, OvftoolBin(), "--lax", vmx, dest)
+	return provider.RunCmd(ctx, OvftoolBin(), "--lax", "--allowExtraConfig", vmx, dest)
 }
 
 // -------------------------------------------------------------- configuration
@@ -458,11 +488,17 @@ func (o *Ops) SnapshotRestore(ctx context.Context, vm, name string) (string, err
 	return o.snap(ctx, vm, "revertToSnapshot", name)
 }
 
-func (o *Ops) SnapshotDelete(ctx context.Context, vm, name string) (string, error) {
+func (o *Ops) SnapshotDelete(ctx context.Context, vm, name string, children bool) (string, error) {
+	if children {
+		return o.snap(ctx, vm, "deleteSnapshot", name, "andDeleteChildren")
+	}
 	return o.snap(ctx, vm, "deleteSnapshot", name)
 }
 
-func (o *Ops) SnapshotList(ctx context.Context, vm string) (string, error) {
+func (o *Ops) SnapshotList(ctx context.Context, vm string, tree bool) (string, error) {
+	if tree {
+		return o.snap(ctx, vm, "listSnapshots", "showtree")
+	}
 	return o.snap(ctx, vm, "listSnapshots")
 }
 
@@ -475,6 +511,17 @@ func (o *Ops) GuestExec(ctx context.Context, vm, program string, args []string) 
 	}
 	argv := append([]string{"runProgramInGuest", vmx, program}, args...)
 	return o.vmrun(ctx, true, argv...)
+}
+
+func (o *Ops) GuestScript(ctx context.Context, vm, interpreter, script string) (string, error) {
+	vmx, err := o.resolveVMX(vm)
+	if err != nil {
+		return "", err
+	}
+	if interpreter == "" {
+		interpreter = "/bin/bash"
+	}
+	return o.vmrun(ctx, true, "runScriptInGuest", vmx, interpreter, script)
 }
 
 func (o *Ops) GuestCopyIn(ctx context.Context, vm, hostSrc, guestDest string) (string, error) {
@@ -498,7 +545,8 @@ func (o *Ops) CaptureScreen(ctx context.Context, vm, hostDest string) (string, e
 	if err != nil {
 		return "", err
 	}
-	out, err := o.vmrun(ctx, true, "captureScreen", vmx, hostDest)
+	u, p := provider.GuestCreds(os.Getenv)
+	out, err := o.vmrun(ctx, u != "" && p != "", "captureScreen", vmx, hostDest)
 	if err != nil {
 		return "", err
 	}
@@ -519,11 +567,17 @@ func (o *Ops) EnsureClusterNetwork(ctx context.Context, name, cidr string) (stri
 		return "", fmt.Errorf("VMware desktop provides one shared NAT network (vmnet8); custom NAT networks need the product's own network editor (root). Attach VMs with connectionType nat and they share vmnet8")
 	}
 	subnet := ""
-	if runtime.GOOS == "darwin" {
-		if data, err := os.ReadFile("/Library/Preferences/VMware Fusion/networking"); err == nil {
-			if m := regexp.MustCompile(`VNET_8_HOSTONLY_SUBNET ([0-9.]+)`).FindStringSubmatch(string(data)); m != nil {
-				subnet = m[1] + "/24"
-			}
+	for _, f := range []string{
+		"/Library/Preferences/VMware Fusion/networking", // macOS
+		"/etc/vmware/networking",                        // Linux Workstation, same format
+	} {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		if m := regexp.MustCompile(`VNET_8_HOSTONLY_SUBNET ([0-9.]+)`).FindStringSubmatch(string(data)); m != nil {
+			subnet = m[1] + "/24"
+			break
 		}
 	}
 	s := "vmnet8 (shared NAT with DHCP) is present on every VMware desktop install; VMs with connectionType nat share it"
