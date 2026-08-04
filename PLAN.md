@@ -101,6 +101,40 @@ VM, guestinfo capability rejection on VirtualBox, vmnet8 intent answer, raw
 escape. Context cost: **~1,771 tokens for all 8 tools** (predecessors: ~5,600
 for less coverage). `go vet` clean, cross-compiles on all five targets.
 
+## Done (continued) — artifact fetch (item 10, v0.3.0)
+
+`core/artifact/fetch.go` ports the download/verify/extract mechanics; the
+`artifact` tool (catalog|resolve|fetch, dry_run, version, dir) supersedes
+`provider resolve` — `provider` is now discovery-only. Fetch dispatches on
+the resolved Kind: GitHub release assets (digest-verified), ubuntu-cloud
+(SHA256SUMS), fixed URLs (explicitly UNVERIFIED), Vagrant boxes (downloaded,
+then extracted to the importable machine file). Output ends with the next
+tool call (`vm_lifecycle import` / `vm_config attach_iso`).
+
+Provider-neutral decisions made here:
+
+- **Image cache is `~/.hypervisor-images` (`HV_IMAGE_DIR` overrides), not a
+  hypervisor's VM dir** — the same ISO seeds VMs on both families. The
+  predecessor's `~/VirtualBox VMs/ISOs` cache is abandoned (adoption ~0).
+- **Vagrant format is per-family, fixed in Resolve**: virtualbox boxes carry
+  `box.ovf`, vmware_desktop boxes a `.vmx` bundle. Labeling every box "ovf"
+  made `Accepts` reject boxes on a Fusion install without ovftool, even
+  though vmrun imports the extracted `.vmx` directly. `extractBox` hunts for
+  either and reports what it found; `Resolved` now carries `Arch` too.
+- **Vagrant selection is (provider, architecture), not provider** — found
+  live: Vagrant Cloud publishes per-arch entries and marks arm64 default
+  for bento boxes, so the predecessor's name-only pick hands an Intel host
+  an ARM image. (That bug ships in `virtualbox-mcp-server` today; dies with
+  it.) Cache keys include provider and arch.
+
+Verified: unit tests (extraction ovf/vmx, traversal rejection, arch-aware
+pick, SHA256SUMS parsing, https-only), plus live stdio smoke on the dev Mac —
+catalog, talos resolve on Fusion, talos-iso dry-run fetch (v1.13.8, GitHub
+digest), bento/ubuntu-24.04 dry-run on Fusion returning the **amd64**
+vmware_desktop box. bento no longer publishes sha256 (checksum_type "none"),
+so boxes download with the UNVERIFIED warning. vet clean, five targets build.
+Context cost: **~2,204 tokens for all 9 tools**.
+
 ## Next — not started
 
 7. **Skills → plugin.** Five `vbox-*` skills become hypervisor-neutral and
@@ -109,9 +143,6 @@ for less coverage). `go vet` clean, cross-compiles on all five targets.
 9. Port `install.go` self-install (wire behind `CapSelfInstall`; the
    VirtualBox implementation exists in the predecessor); add the VMware
    equivalent (both products are now free).
-10. Port the download/verify/extract mechanics from `catalog.go` into
-    `core/artifact` — those parts genuinely are provider-neutral — and grow
-    the `provider` tool's resolve into fetch (an `artifact` tool).
 
 ## Open questions — need verification before the contract hardens
 

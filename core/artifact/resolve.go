@@ -55,6 +55,7 @@ type Resolved struct {
 	Locator string               `json:"locator"`
 	Asset   string               `json:"asset,omitempty"`
 	Format  provider.ImageFormat `json:"format"`
+	Arch    string               `json:"arch"`
 	Notes   string               `json:"notes,omitempty"`
 
 	// VagrantProvider is set for KindVagrant: the provider name to request
@@ -138,6 +139,18 @@ func vagrant(name, box, desc string) Source {
 	}
 }
 
+// vagrantFormat is what a box actually contains once extracted. Boxes differ
+// per provider in content, not just in disk format: "virtualbox" boxes carry
+// box.ovf + disks, "vmware_desktop" boxes carry a .vmx bundle. VMware without
+// ovftool still imports the latter, so labeling every box "ovf" would make
+// Accepts reject artifacts the provider can consume.
+func vagrantFormat(family string) provider.ImageFormat {
+	if family == "vmware" {
+		return provider.FormatVMX
+	}
+	return provider.FormatOVF
+}
+
 // ErrNoVariant reports that an image exists but has nothing usable for the
 // given provider and architecture. It is deliberately distinct from "unknown
 // image" so callers can tell a typo from a genuine capability gap.
@@ -167,7 +180,7 @@ func Resolve(image string, d provider.Descriptor) (*Resolved, error) {
 		}
 		return &Resolved{
 			Source: image, Kind: KindVagrant, Locator: box,
-			Format: provider.FormatOVF, VagrantProvider: vp,
+			Format: vagrantFormat(family), Arch: arch, VagrantProvider: vp,
 		}, nil
 	}
 
@@ -194,6 +207,7 @@ func Resolve(image string, d provider.Descriptor) (*Resolved, error) {
 		Locator: v.Locator,
 		Asset:   strings.ReplaceAll(v.Asset, "{arch}", arch),
 		Format:  v.Format,
+		Arch:    arch,
 		Notes:   src.Notes,
 	}
 	if src.Kind == KindVagrant {
@@ -202,6 +216,7 @@ func Resolve(image string, d provider.Descriptor) (*Resolved, error) {
 			return nil, &ErrNoVariant{Image: image, Family: family, Arch: arch}
 		}
 		r.VagrantProvider = vp
+		r.Format = vagrantFormat(family)
 	}
 
 	// A resolved artifact the provider cannot consume is a resolution failure,

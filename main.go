@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -105,25 +106,53 @@ func vmsOut(vms []provider.VMRef, err error) (*mcp.CallToolResult, any, error) {
 // ------------------------------------------------------------------ provider
 
 type providerIn struct {
-	Action string `json:"action" jsonschema:"list|resolve"`
-	ID     string `json:"id,omitempty" jsonschema:"provider id; defaults to the only ready provider"`
-	Image  string `json:"image,omitempty" jsonschema:"image name for resolve (talos, ubuntu, vagrant:org/box, …)"`
+	Action string `json:"action" jsonschema:"list"`
 }
 
 func providerTool(ctx context.Context, _ *mcp.CallToolRequest, in providerIn) (*mcp.CallToolResult, any, error) {
-	ds := discover(ctx)
 	switch in.Action {
 	case "", "list":
-		b, err := json.MarshalIndent(map[string]any{"providers": ds}, "", "  ")
+		b, err := json.MarshalIndent(map[string]any{"providers": discover(ctx)}, "", "  ")
 		if err != nil {
 			return nil, nil, err
 		}
 		return text(string(b)), nil, nil
-	case "resolve":
-		if in.Image == "" {
-			return nil, nil, fmt.Errorf("resolve requires an image name")
+	}
+	return nil, nil, fmt.Errorf("unknown action %q", in.Action)
+}
+
+// ------------------------------------------------------------------ artifact
+
+type artifactIn struct {
+	Action   string `json:"action" jsonschema:"catalog|resolve|fetch"`
+	Provider string `json:"provider,omitempty" jsonschema:"provider id; defaults to the only ready one"`
+	Image    string `json:"image,omitempty" jsonschema:"image name (talos, talos-iso, ubuntu, kali, vagrant:org/box, …)"`
+	Version  string `json:"version,omitempty" jsonschema:"version/tag where the source supports it (default latest)"`
+	DryRun   bool   `json:"dry_run,omitempty" jsonschema:"fetch: report version/URL/size/checksum without downloading"`
+	Dir      string `json:"dir,omitempty" jsonschema:"fetch: image cache directory (default ~/.hypervisor-images, or HV_IMAGE_DIR)"`
+}
+
+func artifactTool(ctx context.Context, _ *mcp.CallToolRequest, in artifactIn) (*mcp.CallToolResult, any, error) {
+	switch in.Action {
+	case "", "catalog":
+		var b strings.Builder
+		b.WriteString("name | kind | description\n")
+		for _, s := range artifact.Catalog() {
+			note := ""
+			if s.Notes != "" {
+				note = " — " + s.Notes
+			}
+			fmt.Fprintf(&b, "%s | %s | %s%s\n", s.Name, s.Kind, s.Desc, note)
 		}
-		o, err := selectOps(ctx, in.ID)
+		b.WriteString("vagrant:org/box | vagrant | any registry box published for the selected provider\n")
+		b.WriteString("\nfetch returns a path: ova/ovf/vmx → vm_lifecycle import; iso → vm_config attach_iso")
+		return text(b.String()), nil, nil
+
+	case "resolve", "fetch":
+		if in.Image == "" {
+			return nil, nil, fmt.Errorf("%s requires an image name (see action=catalog)", in.Action)
+		}
+		o, err := selectOps(ctx, in.Provider)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -132,8 +161,26 @@ func providerTool(ctx context.Context, _ *mcp.CallToolRequest, in providerIn) (*
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot resolve %q for %s: %w", in.Image, d.ID, err)
 		}
-		b, _ := json.MarshalIndent(r, "", "  ")
-		return text(string(b)), nil, nil
+		if in.Action == "resolve" {
+			b, _ := json.MarshalIndent(r, "", "  ")
+			return text(string(b)), nil, nil
+		}
+		res, err := artifact.Fetch(ctx, r, in.Version, in.Dir, in.DryRun)
+		if err != nil {
+			return nil, nil, err
+		}
+		s := res.Summary
+		if r.Notes != "" {
+			s += "\nnote: " + r.Notes
+		}
+		if !in.DryRun {
+			verb := "vm_lifecycle import path="
+			if res.Format == provider.FormatISO {
+				verb = "vm_config attach_iso iso="
+			}
+			s += fmt.Sprintf("\nnext: %s%s", verb, res.Path)
+		}
+		return text(s), nil, nil
 	}
 	return nil, nil, fmt.Errorf("unknown action %q", in.Action)
 }
@@ -384,7 +431,7 @@ func instructions(ds []provider.Descriptor) string {
 	default:
 		s += "Several providers are ready — ask the user which to use, then pass its id as provider.\n"
 	}
-	s += "Recipe — VM from an image: provider resolve → download/verify → vm_lifecycle import (or create+attach_iso for installers) → vm_config as needed → vm_lifecycle start → vm_info ip.\n" +
+	s += "Recipe — VM from an image: artifact fetch (catalog lists images; dry_run previews) → vm_lifecycle import (or create+attach_iso for installers) → vm_config as needed → vm_lifecycle start → vm_info ip.\n" +
 		"Talos on VMware: vm_config guestinfo (guestinfo.talos.config = base64 machine config) BEFORE first start — no maintenance-mode round trip. On VirtualBox: boot, vm_info ip, then apply config over the network."
 	return s
 }
@@ -394,11 +441,13 @@ func main() {
 	ds := discover(ctx)
 
 	server := mcp.NewServer(
-		&mcp.Implementation{Name: "desktop-hypervisor-mcp", Version: "0.2.0"},
+		&mcp.Implementation{Name: "desktop-hypervisor-mcp", Version: "0.3.0"},
 		&mcp.ServerOptions{Instructions: instructions(ds)},
 	)
 	mcp.AddTool(server, &mcp.Tool{Name: "provider",
-		Description: "Hypervisor discovery and artifact resolution. list: providers with status, capabilities, formats, remediation. resolve: pick the right artifact for an image on the selected provider."}, providerTool)
+		Description: "Hypervisor discovery: installed providers with status, capabilities, formats, and remediation."}, providerTool)
+	mcp.AddTool(server, &mcp.Tool{Name: "artifact",
+		Description: "OS images by short name. catalog: what exists. resolve: which artifact fits the selected provider and host arch. fetch: download it verified (per-source checksums; Vagrant boxes are extracted to their importable file) into the shared image cache."}, artifactTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "vm_lifecycle",
 		Description: "Create, start, stop, suspend (start resumes), reset, delete, clone (optionally linked/from snapshot), import (ova/ovf/vmx), export (ova)."}, lifecycleTool)
 	mcp.AddTool(server, &mcp.Tool{Name: "vm_info",
