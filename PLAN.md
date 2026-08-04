@@ -1,0 +1,121 @@
+# desktop-hypervisor-mcp — build plan
+
+One provider-neutral MCP server over VirtualBox, VMware Fusion, and VMware
+Workstation. Replaces `virtualbox-mcp-server` and the unreleased
+`vmware-fusion-mcp-server`. `talos-mcp-server` stays a separate product and
+consumes this one.
+
+**Nothing here has been pushed.** This tree is local and uncommitted to any
+remote. No public repo was renamed, no release was tagged, no registry entry
+was created.
+
+## Done
+
+- `provider/contract.go` — capability-based provider contract. `Descriptor`
+  advertises status + remediation, host OS/arch, guest arches, accepted image
+  formats, network modes, capabilities, storage. `Kind.Family()` groups
+  Fusion and Workstation onto the shared VMware implementation.
+- `provider/virtualbox/detect.go`, `provider/vmware/detect.go` — real
+  detection. Capabilities are conditional on what is actually present:
+  ovftool absent removes `ova_import`/`ova_export` and the OVA formats; no
+  host ISO backend removes `make_iso`.
+- `provider/hostfs_{unix,windows}.go` — free-space stat behind build tags.
+  `syscall.Statfs` does not exist on Windows and would have broken the
+  GoReleaser windows/amd64 target.
+- `core/artifact/resolve.go` + tests — artifact resolution keyed on
+  (image, provider family, host arch).
+- `main.go` — `provider` tool with `list` and `resolve`, auto-select when one
+  provider is ready, and instructions generated from what was detected.
+
+Verified on the dev Mac (Intel, VirtualBox 7.2.14 + Fusion both installed):
+both providers detect `ready`, ovftool is found via the Fusion fallback path,
+`make_iso` is advertised on VMware only, and `talos` resolves to
+`vmware-amd64.ova` for Fusion vs `virtualbox-amd64.ova` for VirtualBox.
+
+`go vet` clean, tests pass, cross-compiles on all five release targets.
+
+Context cost so far: **~264 tokens** (1 tool). For reference, the two
+predecessor servers cost ~3,267 and ~2,332 tokens; loading both is ~5,600.
+
+## Correction to an earlier assumption
+
+`catalog.go` was described as hypervisor-neutral and liftable unchanged. It is
+not. The coupling is real and load-bearing:
+
+- `vagrantResolve` hardcodes the Vagrant provider name `"virtualbox"`.
+  Boxes are published per provider; VMware needs `vmware_desktop`.
+- The `talos` entry pointed at a VirtualBox-specific OVA. Talos publishes a
+  separate `vmware-*.ova`.
+- `windows-dev` pointed at `aka.ms/windev_VM_virtualbox`; Microsoft publishes
+  a `_vmware` variant.
+- `talos-iso` hardcoded `metal-amd64.iso` — the arch assumption.
+
+So the artifact layer was a design task, not a mechanical move. That is what
+`core/artifact/resolve.go` now handles, and it is the concrete form of the
+"resolver selects per advertised capability" requirement.
+
+## Next — not started
+
+1. **Port the neutral tool surface.** Target ~8 tools: `vm_lifecycle`,
+   `vm_info`, `vm_config`, `snapshot`, `guest`, `network`, `artifact`,
+   `execute_command`. Implementations exist in the two predecessor
+   `main.go` files (39KB and 36KB) and need restructuring behind the
+   contract, not a copy.
+2. **Network by intent, not mechanism.** `ensure_cluster_network` and
+   `expose_guest_port` only. Do not expose host-only interfaces, NAT
+   networks, or vmnet directly — those stay behind `execute_command`.
+3. **`ip_from_dhcp` for both providers.** VirtualBox has
+   `dhcpserver findlease`; VMware needs the vmnet lease file parsed by MAC
+   (`/var/db/vmware/vmnet-dhcpd-vmnet8.leases` on macOS,
+   `/etc/vmware/vmnet8/dhcpd/dhcpd.leases` on Linux). This is the mechanism
+   that works for Talos, which ships no guest agent — see Open questions.
+4. **Split the fat schema.** Fusion's `vm` tool is 2,825 chars of union
+   schema (871 tokens alone). Splitting it into lifecycle/info/config both
+   cuts context and aligns it with VirtualBox's shape.
+5. **Align verbs.** `revert` → `restore`. Breaking, and free right now
+   because nothing is published.
+6. **Trim descriptions.** `image`'s 450-char distro list belongs in
+   `action=catalog` output, not the tool description.
+7. **Skills → plugin.** Five `vbox-*` skills become hypervisor-neutral and
+   take a `provider_id`. They are currently hand-symlinked from a source
+   tree into `~/.claude/skills/`, which does not survive distribution.
+8. **VMware `execute_command`.** The typed-params + args-passthrough + raw
+   escape pattern did not carry over from the VirtualBox server.
+9. Port `install.go` self-install; add the VMware equivalent (both products
+   are now free).
+10. Port the download/verify/extract mechanics from `catalog.go` into
+    `core/artifact` — those parts genuinely are provider-neutral.
+
+## Open questions — need verification before the contract hardens
+
+- **Does Talos's VMware image ship open-vm-tools?** Decides whether
+  `ip_from_tools` is ever usable for Talos nodes on Fusion/Workstation. The
+  contract does not depend on the answer because `ip_from_dhcp` is the
+  primary mechanism, but the answer changes what the skill can do.
+- **`vmware-fusion-local` version reads `1.17.0.25388279`** — that is the
+  vmrun version, not the Fusion product version. Fine for logging, wrong if
+  anything gates on a product version.
+- **`defaultVMDir` for VMware is a documented default, not a query.** vmrun
+  exposes no way to ask. If the user moved their VM store, free-space
+  reporting is wrong.
+
+## Blocked on you — cannot be done unattended
+
+- **Rename the public repo** `virtualbox-mcp-server` → `desktop-hypervisor-mcp`.
+  Recommended over a fresh repo: preserves history and the CI scaffolding,
+  and GitHub redirects the old URL. Adoption is zero (0 stars/forks, 1
+  download), so there is nothing to migrate. Requires the `go.mod` module
+  path and imports to change with it.
+- **Apple Developer account + notarization.** Needed before mcpb bundles ship
+  to macOS users, or Gatekeeper blocks the extracted binary. Requires a paid
+  account and signing secrets in CI.
+- **MCP registry publishing.** `mcp-publisher login github` is an interactive
+  device-code flow.
+- **Runner registration on the Mac.** The two existing runners are repo-scoped
+  to `talos_virtualbox_vm` and `terraform-provider-virtualbox`; a personal
+  account has no org-level runner groups, so this repo needs its own.
+  Before pointing a public repo at a self-hosted runner on your laptop, set
+  Actions → require approval for all outside collaborators — otherwise a fork
+  PR can execute on that machine.
+- **Rotate `VMRUN_GUEST_PASSWORD`.** It is in `~/.claude.json` in plaintext
+  and has been readable for the life of that config.
