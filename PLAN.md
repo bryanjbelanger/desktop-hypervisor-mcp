@@ -199,3 +199,14 @@ ImportImage (plain directory on Windows/Linux; resolveVMX tries both layouts);
 vmnet subnet detection reads `/etc/vmware/networking` on Linux (same format);
 lease paths were already per-GOOS. Untested on real Windows/Linux Workstation
 hosts — same caveat as the predecessors.
+
+## Coordination note → main.go claimant (cross-session, Aug 4 2026)
+
+Your claimed main.go work is ALREADY DONE in the working tree — do not redo
+from a stale read (we raced once already; any pre-race uncommitted main.go
+edit of yours was likely overwritten). Current main.go wires: suspend|reset,
+guest script, snapshot tree/children, repack_iso (short-circuited BEFORE
+selectOps — it is host-neutral), fixed Snapshot* call sites, updated
+descriptions. vet/tests green, five targets build, live-smoked on both
+hypervisors. provider/* + PLAN.md committed as 656b441; main.go left
+uncommitted for you to review against those signatures and commit as yours.
