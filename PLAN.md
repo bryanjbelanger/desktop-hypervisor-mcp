@@ -75,37 +75,43 @@ The predecessor Fusion server already has the mechanism — its `configure`
 action sets an arbitrary `.vmx` key on a powered-off VM — so this is wiring,
 not new capability.
 
+## Done (continued) — neutral tool surface ported
+
+Items 1–5 and 8 of the original list landed together (v0.2.0):
+
+- `provider/ops.go` — the `Ops` interface: a dispatch surface, not an
+  abstraction. Capability gating via `Descriptor` + `Unsupported(cap)` errors
+  that name the missing capability; provider-native vocabulary passes through
+  (guest OS ids, ISO slots); network is intent-only; mechanism stays in `Raw`.
+- `provider/runcmd.go` — shared runner (600s bound, both streams, OS error
+  preserved when streams are empty).
+- `provider/virtualbox/ops.go`, `provider/vmware/ops.go` — full adapters
+  ported from the predecessors, including the campaign-earned fixes: VMX
+  case-insensitive key handling, hpet0 on created VMs (Windows BSOD),
+  `--lax --allowExtraConfig` imports, vmnet lease parsing by MAC
+  (`ip_from_dhcp` on both providers), linked-clone snapshot requirement.
+- 8 tools in `main.go`: provider, vm_lifecycle, vm_info, vm_config, snapshot
+  (verb is `restore`), guest, network (intent-only + make_iso), execute_command.
+- Guest credentials: `HV_GUEST_USER`/`HV_GUEST_PASSWORD` env (VMRUN_* legacy
+  honored), never tool parameters.
+
+Verified live on the dev Mac against both installed hypervisors: inventory on
+each, ambiguity error when neither is named, Fusion snapshot list on a real
+VM, guestinfo capability rejection on VirtualBox, vmnet8 intent answer, raw
+escape. Context cost: **~1,771 tokens for all 8 tools** (predecessors: ~5,600
+for less coverage). `go vet` clean, cross-compiles on all five targets.
+
 ## Next — not started
 
-1. **Port the neutral tool surface.** Target ~8 tools: `vm_lifecycle`,
-   `vm_info`, `vm_config`, `snapshot`, `guest`, `network`, `artifact`,
-   `execute_command`. Implementations exist in the two predecessor
-   `main.go` files (39KB and 36KB) and need restructuring behind the
-   contract, not a copy.
-2. **Network by intent, not mechanism.** `ensure_cluster_network` and
-   `expose_guest_port` only. Do not expose host-only interfaces, NAT
-   networks, or vmnet directly — those stay behind `execute_command`.
-3. **`ip_from_dhcp` for both providers.** VirtualBox has
-   `dhcpserver findlease`; VMware needs the vmnet lease file parsed by MAC
-   (`/var/db/vmware/vmnet-dhcpd-vmnet8.leases` on macOS,
-   `/etc/vmware/vmnet8/dhcpd/dhcpd.leases` on Linux). This is the mechanism
-   that works for Talos, which ships no guest agent — see Open questions.
-4. **Split the fat schema.** Fusion's `vm` tool is 2,825 chars of union
-   schema (871 tokens alone). Splitting it into lifecycle/info/config both
-   cuts context and aligns it with VirtualBox's shape.
-5. **Align verbs.** `revert` → `restore`. Breaking, and free right now
-   because nothing is published.
-6. **Trim descriptions.** `image`'s 450-char distro list belongs in
-   `action=catalog` output, not the tool description.
 7. **Skills → plugin.** Five `vbox-*` skills become hypervisor-neutral and
    take a `provider_id`. They are currently hand-symlinked from a source
    tree into `~/.claude/skills/`, which does not survive distribution.
-8. **VMware `execute_command`.** The typed-params + args-passthrough + raw
-   escape pattern did not carry over from the VirtualBox server.
-9. Port `install.go` self-install; add the VMware equivalent (both products
-   are now free).
+9. Port `install.go` self-install (wire behind `CapSelfInstall`; the
+   VirtualBox implementation exists in the predecessor); add the VMware
+   equivalent (both products are now free).
 10. Port the download/verify/extract mechanics from `catalog.go` into
-    `core/artifact` — those parts genuinely are provider-neutral.
+    `core/artifact` — those parts genuinely are provider-neutral — and grow
+    the `provider` tool's resolve into fetch (an `artifact` tool).
 
 ## Open questions — need verification before the contract hardens
 
