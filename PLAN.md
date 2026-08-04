@@ -143,6 +143,20 @@ Context cost: **~2,204 tokens for all 9 tools**.
 9. Port `install.go` self-install (wire behind `CapSelfInstall`; the
    VirtualBox implementation exists in the predecessor); add the VMware
    equivalent (both products are now free).
+11. **CIS hardened images → catalog entries** (waiting on the
+    `cis-hardened-images` repo cutting its first GitHub release; it is still
+    working through build issues — as of Aug 4 only rocky9 has packer vars
+    and the workflows are stubs). The shape is already supported: one
+    `KindGitHubAsset` Source per target (rocky9/10, alma9/10, cs9/10,
+    ubuntu2204/2404) with per-family Variants, exactly like `talos`. GitHub
+    auto-digests release assets, so our fetch verifies without parsing their
+    `.ova.sha256` sidecars. **Naming contract to request of that repo**:
+    date/version in the release *tag*, not the asset name (findAsset is
+    exact-match against "latest"), and a hypervisor discriminator in the
+    asset (`cis-<target>-<virtualbox|vmware>-amd64.ova`) — the images differ
+    per hypervisor (guest agent), and today both packer sources emit
+    `<vm_name>.ova` with no discriminator, which cannot be told apart in one
+    release.
 
 ## Open questions — need verification before the contract hardens
 
