@@ -5,9 +5,10 @@ Workstation. Replaces `virtualbox-mcp-server` and the unreleased
 `vmware-fusion-mcp-server`. `talos-mcp-server` stays a separate product and
 consumes this one.
 
-**Nothing here has been pushed.** This tree is local and uncommitted to any
-remote. No public repo was renamed, no release was tagged, no registry entry
-was created.
+**Published Aug 4–5 2026.** The public repo was renamed (predecessor history
+on the `predecessor-virtualbox` branch), v0.3.0 is tagged and released with
+binaries for all five targets, and the server is listed in the MCP registry
+as `io.github.bryanjbelanger/desktop-hypervisor-mcp`.
 
 ## Done
 
@@ -183,24 +184,30 @@ Context cost: **~2,204 tokens for all 9 tools**.
 
 ## Blocked on you — cannot be done unattended
 
-- **Rename the public repo** `virtualbox-mcp-server` → `desktop-hypervisor-mcp`.
-  Recommended over a fresh repo: preserves history and the CI scaffolding,
-  and GitHub redirects the old URL. Adoption is zero (0 stars/forks, 1
-  download), so there is nothing to migrate. Requires the `go.mod` module
-  path and imports to change with it.
 - **Apple Developer account + notarization.** Needed before mcpb bundles ship
   to macOS users, or Gatekeeper blocks the extracted binary. Requires a paid
-  account and signing secrets in CI.
-- **MCP registry publishing.** `mcp-publisher login github` is an interactive
-  device-code flow.
-- **Runner registration on the Mac.** The two existing runners are repo-scoped
-  to `talos_virtualbox_vm` and `terraform-provider-virtualbox`; a personal
-  account has no org-level runner groups, so this repo needs its own.
-  Before pointing a public repo at a self-hosted runner on your laptop, set
-  Actions → require approval for all outside collaborators — otherwise a fork
-  PR can execute on that machine.
+  account and signing secrets in CI. Once bundles exist, add the `packages`
+  block to `server.json` (mcpb type) and republish for one-click installs —
+  the current registry entry is deliberately minimal.
 - **Rotate `VMRUN_GUEST_PASSWORD`.** It is in `~/.claude.json` in plaintext
   and has been readable for the life of that config.
+
+### Done Aug 4–5 2026 (were blocked, now cleared)
+
+- Repo renamed; predecessor history on `predecessor-virtualbox` (+v1.0.0 tag).
+  The old tag does not confuse Go tooling: its go.mod carries the old module
+  path, so the proxy excludes it from version resolution for the new name.
+- Actions set to require approval for all external contributors (fork PRs
+  cannot run on the self-hosted runner unreviewed).
+- MCP registry: logged in and published (v0.3.0, minimal entry, description
+  capped at 100 chars by the registry).
+- Runner: no new registration needed — but ARC registration does NOT follow
+  GitHub rename redirects. Fixed `githubConfigUrl` in
+  cluster-infra/argocd-apps/arc-runner-set-vbox-mcp-app.yaml (commit
+  9d61d5f there); scale-set name and runs-on label deliberately kept as
+  `arc-runner-set-vbox-mcp`.
+- v0.3.0 released: five binaries + checksums.txt via GoReleaser on the
+  cluster runner.
 
 ## Fold-in audit — vmware-fusion-mcp-server v0.3 coverage map (Aug 4 2026)
 
