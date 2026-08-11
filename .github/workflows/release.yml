@@ -31,9 +31,9 @@ jobs:
           echo "sha=$(printf '%s\n' "$out" | tail -1)" >> "$GITHUB_OUTPUT"
 
       - name: Attach bundle to release
-        run: gh release upload "$GITHUB_REF_NAME" "${{ steps.mcpb.outputs.bundle }}" --clobber
+        run: python3 scripts/upload-release-asset.py "$GITHUB_REF_NAME" "${{ steps.mcpb.outputs.bundle }}"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # The bundle URL and its hash are only knowable after the release exists,
       # so the committed server.json carries a placeholder hash and CI stamps
@@ -63,7 +63,19 @@ jobs:
 
       - name: Install mcp-publisher
         run: |
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          python3 - <<'PY'
+          import platform, tarfile, urllib.request
+
+          arch = {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine(), platform.machine())
+          url = (
+              "https://github.com/modelcontextprotocol/registry/releases/latest/download"
+              f"/mcp-publisher_{platform.system().lower()}_{arch}.tar.gz"
+          )
+          urllib.request.urlretrieve(url, "mcp-publisher.tar.gz")
+          with tarfile.open("mcp-publisher.tar.gz") as tar:
+              tar.extract("mcp-publisher", ".", filter="data")
+          PY
+          chmod +x mcp-publisher
 
       - name: Publish to MCP Registry
         run: |
