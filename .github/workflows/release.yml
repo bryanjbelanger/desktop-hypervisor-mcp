@@ -4,6 +4,7 @@ on:
     tags: ["v*"]
 permissions:
   contents: write
+  id-token: write # OIDC authentication to the MCP Registry
 jobs:
   release:
     runs-on: arc-runner-set-vbox-mcp
@@ -19,3 +20,53 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The registry takes one mcpb artifact per version with no platform
+      # field, so every (os, arch) binary ships in a single bundle.
+      - name: Build MCP bundle
+        id: mcpb
+        run: |
+          out=$(BIN_DIR=dist scripts/build-mcpb.sh "${GITHUB_REF_NAME#v}" dist-mcpb)
+          echo "bundle=$(printf '%s\n' "$out" | head -1)" >> "$GITHUB_OUTPUT"
+          echo "sha=$(printf '%s\n' "$out" | tail -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Attach bundle to release
+        run: gh release upload "$GITHUB_REF_NAME" "${{ steps.mcpb.outputs.bundle }}" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The bundle URL and its hash are only knowable after the release exists,
+      # so the committed server.json carries a placeholder hash and CI stamps
+      # the real one in. Published versions are immutable — this must be right.
+      - name: Stamp bundle coordinates into server.json
+        run: |
+          python3 - "${GITHUB_REF_NAME#v}" "${{ steps.mcpb.outputs.sha }}" <<'PY'
+          import json, sys
+
+          version, sha = sys.argv[1], sys.argv[2]
+          with open("server.json") as f:
+              doc = json.load(f)
+
+          doc["version"] = version
+          pkg, = doc["packages"]
+          pkg["version"] = version
+          pkg["fileSha256"] = sha
+          pkg["identifier"] = (
+              "https://github.com/bryanjbelanger/desktop-hypervisor-mcp"
+              f"/releases/download/v{version}/desktop-hypervisor-mcp-{version}.mcpb"
+          )
+
+          with open("server.json", "w") as f:
+              json.dump(doc, f, indent=2)
+              f.write("\n")
+          PY
+
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+      - name: Publish to MCP Registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher validate
+          ./mcp-publisher publish

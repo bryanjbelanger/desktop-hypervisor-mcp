@@ -6,5 +6,37 @@
     "url": "https://github.com/bryanjbelanger/desktop-hypervisor-mcp",
     "source": "github"
   },
-  "version": "0.3.0"
+  "version": "0.4.0",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/bryanjbelanger/desktop-hypervisor-mcp/releases/download/v0.4.0/desktop-hypervisor-mcp-0.4.0.mcpb",
+      "version": "0.4.0",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "HV_GUEST_USER",
+          "description": "Username for in-guest operations (exec, script, file copy). Omit if guest operations are not needed.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "HV_GUEST_PASSWORD",
+          "description": "Password for in-guest operations. Read from the server environment, never accepted as a tool parameter.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "HV_IMAGE_DIR",
+          "description": "Cache directory for downloaded OS images. Defaults to ~/.hypervisor-images.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "filepath"
+        }
+      ]
+    }
+  ]
 }

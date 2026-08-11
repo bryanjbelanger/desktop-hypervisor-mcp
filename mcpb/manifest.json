@@ -1,0 +1,74 @@
+{
+  "manifest_version": "0.3",
+  "name": "desktop-hypervisor-mcp",
+  "display_name": "Desktop Hypervisor",
+  "version": "__VERSION__",
+  "description": "VirtualBox and VMware Fusion/Workstation behind one provider-neutral MCP tool surface.",
+  "long_description": "One MCP server for the desktop hypervisors: VirtualBox, VMware Fusion, and VMware Workstation. Nine capability-based tools cover VM lifecycle, snapshots, guest execution, networking, and verified downloads of official OS images. Providers advertise what they can actually do, so unsupported operations fail by naming the missing capability rather than with a raw provider error. With one hypervisor installed it is selected automatically; with several, the ambiguity is surfaced, never guessed.",
+  "author": {
+    "name": "Bryan Belanger",
+    "url": "https://github.com/bryanjbelanger"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bryanjbelanger/desktop-hypervisor-mcp.git"
+  },
+  "homepage": "https://github.com/bryanjbelanger/desktop-hypervisor-mcp",
+  "documentation": "https://github.com/bryanjbelanger/desktop-hypervisor-mcp#readme",
+  "support": "https://github.com/bryanjbelanger/desktop-hypervisor-mcp/issues",
+  "license": "MIT",
+  "keywords": ["virtualbox", "vmware", "hypervisor", "virtual-machine", "devops"],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/launch.sh",
+    "mcp_config": {
+      "command": "${__dirname}/server/launch.sh",
+      "args": [],
+      "env": {
+        "HV_GUEST_USER": "${user_config.guest_user}",
+        "HV_GUEST_PASSWORD": "${user_config.guest_password}",
+        "HV_IMAGE_DIR": "${user_config.image_dir}"
+      },
+      "platform_overrides": {
+        "win32": {
+          "command": "${__dirname}/server/desktop-hypervisor-mcp-windows-amd64.exe"
+        }
+      }
+    }
+  },
+  "tools": [
+    { "name": "provider", "description": "Installed hypervisors with status, capabilities, formats, and remediation" },
+    { "name": "artifact", "description": "Verified downloads of official OS images, resolved per provider" },
+    { "name": "vm_lifecycle", "description": "Create, start, stop, suspend, reset, delete, clone, import, export VMs" },
+    { "name": "vm_info", "description": "List and inspect VMs, and discover guest IP addresses" },
+    { "name": "vm_config", "description": "Resources, nested virtualization, ISO attachment, pre-boot guestinfo injection" },
+    { "name": "snapshot", "description": "Take, restore, delete, and list VM snapshots" },
+    { "name": "guest", "description": "Execute commands and scripts in a guest, copy files, capture screenshots" },
+    { "name": "network", "description": "Cluster networks, guest port exposure, and ISO mastering" },
+    { "name": "execute_command", "description": "Raw VBoxManage / vmrun argv on the selected provider" }
+  ],
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"]
+  },
+  "user_config": {
+    "guest_user": {
+      "type": "string",
+      "title": "Guest username",
+      "description": "Username for in-guest operations (guest exec, script, file copy). Leave empty if you do not need guest operations.",
+      "required": false
+    },
+    "guest_password": {
+      "type": "string",
+      "title": "Guest password",
+      "description": "Password for in-guest operations. Stored securely by the host application and passed to the server as an environment variable, never as a tool parameter.",
+      "sensitive": true,
+      "required": false
+    },
+    "image_dir": {
+      "type": "directory",
+      "title": "Image cache directory",
+      "description": "Where downloaded OS images are cached. Defaults to ~/.hypervisor-images when empty.",
+      "required": false
+    }
+  }
+}

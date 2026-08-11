@@ -63,7 +63,19 @@ auto-extracted to their importable machine file. The cache lives in
 Optional, detected at runtime: `ovftool` enables OVA import/export on VMware;
 `xorriso` enables `repack_iso`.
 
-## Building
+## Installing
+
+Listed on the [MCP Registry](https://registry.modelcontextprotocol.io) as
+`io.github.bryanjbelanger/desktop-hypervisor-mcp`.
+
+For hosts that support MCP Bundles, download the `.mcpb` from the
+[latest release](https://github.com/bryanjbelanger/desktop-hypervisor-mcp/releases/latest)
+and open it — guest credentials and the image cache directory are prompted for
+in the host's own UI. One bundle covers every platform; it carries a binary per
+(os, arch) and picks one at startup, so it is ~16 MB.
+
+Otherwise take the bare binary for your platform from the same release, or
+build it:
 
 ```bash
 go build -o desktop-hypervisor-mcp .

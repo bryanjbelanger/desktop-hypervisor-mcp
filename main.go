@@ -436,12 +436,16 @@ func instructions(ds []provider.Descriptor) string {
 	return s
 }
 
+// version is stamped at build time by GoReleaser; it stays "dev" for a plain
+// `go build`, which is what an unreleased local build in fact is.
+var version = "dev"
+
 func main() {
 	ctx := context.Background()
 	ds := discover(ctx)
 
 	server := mcp.NewServer(
-		&mcp.Implementation{Name: "desktop-hypervisor-mcp", Version: "0.3.0"},
+		&mcp.Implementation{Name: "desktop-hypervisor-mcp", Version: version},
 		&mcp.ServerOptions{Instructions: instructions(ds)},
 	)
 	mcp.AddTool(server, &mcp.Tool{Name: "provider",
