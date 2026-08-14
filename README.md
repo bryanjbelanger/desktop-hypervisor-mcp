@@ -65,8 +65,11 @@ Optional, detected at runtime: `ovftool` enables OVA import/export on VMware;
 
 ## Installing
 
-Listed on the [MCP Registry](https://registry.modelcontextprotocol.io) as
-`io.github.bryanjbelanger/desktop-hypervisor-mcp`.
+Published on the [official MCP Registry](https://registry.modelcontextprotocol.io)
+as `io.github.bryanjbelanger/desktop-hypervisor-mcp` — that name is what
+registry-aware clients install by. The registry has no per-server page yet, so
+the listing itself is the API record:
+[current entry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.bryanjbelanger/desktop-hypervisor-mcp&version=latest).
 
 For hosts that support MCP Bundles, download the `.mcpb` from the
 [latest release](https://github.com/bryanjbelanger/desktop-hypervisor-mcp/releases/latest)
