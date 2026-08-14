@@ -48,8 +48,7 @@ func (Detector) Detect(ctx context.Context) []provider.Descriptor {
 	if err != nil {
 		d.Status = provider.StatusMissingTooling
 		d.Remediation = "VirtualBox is not installed or VBoxManage is not on PATH. " +
-			"The system tool can self-install it from Oracle's official mirror."
-		d.Capabilities = []provider.Capability{provider.CapSelfInstall}
+			"Oracle distributes it free from https://www.virtualbox.org/wiki/Downloads."
 		return []provider.Descriptor{d}
 	}
 	d.Status = provider.StatusReady
@@ -69,7 +68,7 @@ func (Detector) Detect(ctx context.Context) []provider.Descriptor {
 		provider.CapGuestExec, provider.CapGuestCopyIn, provider.CapGuestCopyOut,
 		provider.CapOVAImport, provider.CapOVAExport,
 		provider.CapLinkedClone, provider.CapPortForward, provider.CapSnapshotTree,
-		provider.CapUEFI, provider.CapNestedVirt, provider.CapSelfInstall,
+		provider.CapUEFI, provider.CapNestedVirt,
 		// VirtualBox resolves guest IPs from its own DHCP server leases
 		// (dhcpserver findlease), which needs no in-guest agent — the only
 		// mechanism that works for Talos nodes.
