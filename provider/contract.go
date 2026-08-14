@@ -66,8 +66,8 @@ const (
 	CapUEFI          Capability = "uefi"
 	CapSecureBoot    Capability = "secure_boot"
 	CapNestedVirt    Capability = "nested_virt"
-	CapMakeISO       Capability = "make_iso" // build an ISO on the host (kickstart/OEMDRV seeds)
-	CapSelfInstall   Capability = "self_install"
+	CapMakeISO       Capability = "make_iso"      // build an ISO on the host (kickstart/OEMDRV seeds)
+	CapSelfInstall   Capability = "self_install"  // reserved: unimplemented, so no adapter may advertise it (PLAN.md item 9)
 	CapIPFromDHCP    Capability = "ip_from_dhcp"  // resolve guest IP by MAC from hypervisor DHCP state
 	CapIPFromTools   Capability = "ip_from_tools" // resolve guest IP via in-guest agent
 	CapCaptureScreen Capability = "capture_screen"
