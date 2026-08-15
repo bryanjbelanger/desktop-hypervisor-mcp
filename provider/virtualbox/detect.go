@@ -44,7 +44,12 @@ func (Detector) Detect(ctx context.Context) []provider.Descriptor {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	out, err := exec.CommandContext(ctx, Bin(), "--version").Output()
+	// ChildEnv on every VBoxManage call matters here especially: the first
+	// invocation spawns the per-user VBoxSVC daemon, which inherits its
+	// environment and serves all later calls.
+	verCmd := exec.CommandContext(ctx, Bin(), "--version")
+	verCmd.Env = provider.ChildEnv()
+	out, err := verCmd.Output()
 	if err != nil {
 		d.Status = provider.StatusMissingTooling
 		d.Remediation = "VirtualBox is not installed or VBoxManage is not on PATH. " +
@@ -77,7 +82,9 @@ func (Detector) Detect(ctx context.Context) []provider.Descriptor {
 		provider.CapIPFromTools,
 	}
 
-	if props, err := exec.CommandContext(ctx, Bin(), "list", "systemproperties").Output(); err == nil {
+	propsCmd := exec.CommandContext(ctx, Bin(), "list", "systemproperties")
+	propsCmd.Env = provider.ChildEnv()
+	if props, err := propsCmd.Output(); err == nil {
 		if m := machineFolderRe.FindStringSubmatch(string(props)); m != nil {
 			d.VMDir = strings.TrimSpace(m[1])
 			d.StorageFreeBytes = provider.FreeBytes(d.VMDir)
