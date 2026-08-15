@@ -225,7 +225,7 @@ func fetchHTTPS(ctx context.Context, rawURL, destPath, wantSHA string) (string, 
 	if err != nil {
 		return "", err
 	}
-	client := &http.Client{Timeout: 30 * time.Minute}
+	client := httpClient(30 * time.Minute)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download failed: %w", err)
@@ -270,7 +270,7 @@ func headSize(ctx context.Context, rawURL string) int64 {
 	if err != nil {
 		return 0
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0
@@ -308,7 +308,7 @@ func githubRelease(ctx context.Context, repo, version string) (*ghRelease, error
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("GitHub API request failed: %w", err)
@@ -392,7 +392,7 @@ func vagrantResolve(ctx context.Context, box, version, providerName, arch string
 	if err != nil {
 		return "", nil, err
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", nil, fmt.Errorf("vagrant registry request failed: %w", err)
@@ -504,7 +504,7 @@ func ubuntuCloudResolve(ctx context.Context, version, arch string) (dlURL, sum, 
 	if err != nil {
 		return "", "", "", err
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := httpClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", "", "", fmt.Errorf("fetching SHA256SUMS: %w", err)
