@@ -132,6 +132,18 @@ read-only tools are safe to always-allow:
 Keep mutating tools (`vm_lifecycle`, `execute_command`) behind prompts
 unless you accept unattended VM mutation.
 
+## Bundled skills
+
+[`skills/`](skills/) contains workflow skills for Claude Code — procedures that
+compose this server's tools across either hypervisor:
+[hv-vm](skills/hv-vm/SKILL.md) (provisioning),
+[hv-network](skills/hv-network/SKILL.md) (networks, guest reachability, seed ISOs),
+[hv-snapshot](skills/hv-snapshot/SKILL.md) (safety workflows),
+[hv-maintenance](skills/hv-maintenance/SKILL.md) (inventory & cleanup),
+[hv-transfer](skills/hv-transfer/SKILL.md) (clone/export/move).
+Install by copying (or symlinking) into `~/.claude/skills/`. They supersede the
+predecessor's `vbox-*` skills.
+
 ## Related projects
 
 - [talos-mcp-server](https://github.com/bryanjbelanger/talos-mcp-server) —
