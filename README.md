@@ -9,6 +9,12 @@ history is preserved on the `predecessor-virtualbox` branch) and the never-
 released vmware-fusion-mcp-server, folding both into one capability-based
 surface.
 
+**Versioning note:** stable releases of this server start at **v2.0.0**. The
+v1.x line (and its `v1.0.0` release, kept for anyone still pinning it) belongs
+to the virtualbox-only predecessor; the 0.x tags were this server's pre-stable
+iterations. v2.0.0 is identical in content to v0.4.3, re-versioned as the
+stable line.
+
 ## Design
 
 - **Capability-based, not lowest-common-denominator.** Providers advertise
