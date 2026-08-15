@@ -12,7 +12,7 @@
       "registryType": "mcpb",
       "identifier": "https://github.com/bryanjbelanger/desktop-hypervisor-mcp/releases/download/v2.0.0/desktop-hypervisor-mcp-2.0.0.mcpb",
       "version": "2.0.0",
-      "fileSha256": "2e81b8088ea8f998cdca8e97fb3c178d3297fca209e83d3ead96e3dc2fe2c527",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "transport": {
         "type": "stdio"
       },
