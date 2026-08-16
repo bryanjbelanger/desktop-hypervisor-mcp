@@ -6,12 +6,12 @@
     "url": "https://github.com/bryanjbelanger/desktop-hypervisor-mcp",
     "source": "github"
   },
-  "version": "2.1.1",
+  "version": "2.1.2",
   "packages": [
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/bryanjbelanger/desktop-hypervisor-mcp/releases/download/v2.1.1/desktop-hypervisor-mcp-2.1.1.mcpb",
-      "version": "2.1.1",
+      "identifier": "https://github.com/bryanjbelanger/desktop-hypervisor-mcp/releases/download/v2.1.2/desktop-hypervisor-mcp-2.1.2.mcpb",
+      "version": "2.1.2",
       "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "transport": {
         "type": "stdio"
