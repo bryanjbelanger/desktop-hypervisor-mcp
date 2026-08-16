@@ -21,10 +21,11 @@ import (
 type Kind string
 
 const (
-	KindGitHubAsset Kind = "github_asset" // release asset from a GitHub repo
-	KindURL         Kind = "url"          // direct download
-	KindVagrant     Kind = "vagrant"      // Vagrant registry box, per provider
-	KindUbuntuCloud Kind = "ubuntu_cloud" // Canonical cloud image index
+	KindGitHubAsset  Kind = "github_asset"  // release asset from a GitHub repo
+	KindURL          Kind = "url"           // direct download
+	KindVagrant      Kind = "vagrant"       // Vagrant registry box, per provider
+	KindUbuntuCloud  Kind = "ubuntu_cloud"  // Canonical cloud image index
+	KindTalosFactory Kind = "talos_factory" // Talos Image Factory build (factory.talos.dev)
 )
 
 // Variant is one concrete artifact for a given provider family and arch.
@@ -32,7 +33,8 @@ const (
 type Variant struct {
 	Family  string               // "virtualbox", "vmware", or "" for any
 	Arch    string               // GOARCH, or "" for any
-	Locator string               // repo, URL, or box name depending on Kind
+	Kind    Kind                 // overrides the Source Kind when set; variants of one image can come from different distribution channels
+	Locator string               // repo, URL, box name, or schematic ID depending on Kind
 	Asset   string               // release asset name, may contain {arch}
 	Format  provider.ImageFormat // what the artifact actually is
 }
@@ -65,20 +67,31 @@ type Resolved struct {
 
 const talosRepo = "siderolabs/talos"
 
+// talosVanillaSchematic is Image Factory's well-known ID for the empty
+// schematic (no extensions, no extra kernel args) — the equivalent of the
+// images Talos attached to GitHub releases before v1.8.0.
+const talosVanillaSchematic = "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
+
 // Catalog is the maintained image list. Variants carry the provider coupling
 // that used to be baked into a single VirtualBox-shaped entry.
 func Catalog() []Source {
 	return []Source{
 		{
+			// Talos v1.8.0 (Sep 2024) stopped attaching hypervisor images to
+			// GitHub releases (Image Factory took over), and a VirtualBox OVA
+			// was never a release asset at all — VirtualBox has no Talos
+			// platform image anywhere, so it gets the metal ISO: boot into
+			// maintenance mode, then apply config over the network.
 			Name: "talos", Kind: KindGitHubAsset,
-			Desc: "Talos Linux appliance (Kubernetes node OS)",
-			Notes: "the vmware OVA is published for vSphere/ESXi; importing it into " +
-				"Fusion/Workstation needs ovftool --lax --allowExtraConfig, and is " +
-				"unverified on the desktop products. Prefer talos-iso there until it is.",
+			Desc: "Talos Linux (Kubernetes node OS): metal ISO on VirtualBox, Image Factory OVA on VMware",
+			Notes: "the vmware OVA is built for vSphere/ESXi and Image Factory publishes " +
+				"no checksum for it; importing it into Fusion/Workstation needs " +
+				"ovftool --lax --allowExtraConfig, and is unverified on the desktop " +
+				"products. Prefer talos-iso there until it is.",
 			Variants: []Variant{
 				{Family: "virtualbox", Locator: talosRepo,
-					Asset: "virtualbox-{arch}.ova", Format: provider.FormatOVA},
-				{Family: "vmware", Locator: talosRepo,
+					Asset: "metal-{arch}.iso", Format: provider.FormatISO},
+				{Family: "vmware", Kind: KindTalosFactory, Locator: talosVanillaSchematic,
 					Asset: "vmware-{arch}.ova", Format: provider.FormatOVA},
 			},
 		},
@@ -201,9 +214,13 @@ func Resolve(image string, d provider.Descriptor) (*Resolved, error) {
 		return nil, &ErrNoVariant{Image: image, Family: family, Arch: arch}
 	}
 
+	kind := src.Kind
+	if v.Kind != "" {
+		kind = v.Kind
+	}
 	r := &Resolved{
 		Source:  src.Name,
-		Kind:    src.Kind,
+		Kind:    kind,
 		Locator: v.Locator,
 		Asset:   strings.ReplaceAll(v.Asset, "{arch}", arch),
 		Format:  v.Format,

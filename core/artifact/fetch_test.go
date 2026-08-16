@@ -187,6 +187,14 @@ func TestVagrantProviderPickIsArchAware(t *testing.T) {
 	}
 }
 
+func TestTalosFactoryURL(t *testing.T) {
+	got := talosFactoryURL("abc123", "v1.13.8", "vmware-amd64.ova")
+	want := "https://factory.talos.dev/image/abc123/v1.13.8/vmware-amd64.ova"
+	if got != want {
+		t.Errorf("url = %q, want %q", got, want)
+	}
+}
+
 func TestGitHubAssetLookup(t *testing.T) {
 	rel := &ghRelease{TagName: "v1.0.0", Assets: []ghAsset{
 		{Name: "vmware-amd64.ova", Digest: "sha256:beef"},

@@ -18,7 +18,9 @@ func desc(k provider.Kind, arch string, formats ...provider.ImageFormat) provide
 }
 
 // The bug this package exists to fix: one image must resolve to a different
-// artifact per hypervisor family.
+// artifact per hypervisor family. Since Talos v1.8.0 the families also differ
+// in distribution channel: VirtualBox gets the metal ISO GitHub asset (a
+// VirtualBox OVA was never published), VMware gets the Image Factory OVA.
 func TestTalosResolvesPerFamily(t *testing.T) {
 	vb, err := Resolve("talos", desc(provider.KindVirtualBox, "amd64"))
 	if err != nil {
@@ -31,11 +33,13 @@ func TestTalosResolvesPerFamily(t *testing.T) {
 	if vb.Asset == vm.Asset {
 		t.Fatalf("talos resolved to the same asset for both families: %q", vb.Asset)
 	}
-	if vb.Asset != "virtualbox-amd64.ova" {
-		t.Errorf("virtualbox asset = %q", vb.Asset)
+	if vb.Kind != KindGitHubAsset || vb.Locator != talosRepo ||
+		vb.Asset != "metal-amd64.iso" || vb.Format != provider.FormatISO {
+		t.Errorf("virtualbox resolved %+v", vb)
 	}
-	if vm.Asset != "vmware-amd64.ova" {
-		t.Errorf("vmware asset = %q", vm.Asset)
+	if vm.Kind != KindTalosFactory || vm.Locator != talosVanillaSchematic ||
+		vm.Asset != "vmware-amd64.ova" || vm.Format != provider.FormatOVA {
+		t.Errorf("vmware resolved %+v", vm)
 	}
 }
 

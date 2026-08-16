@@ -136,6 +136,24 @@ vmware_desktop box. bento no longer publishes sha256 (checksum_type "none"),
 so boxes download with the UNVERIFIED warning. vet clean, five targets build.
 Context cost: **~2,204 tokens for all 9 tools**.
 
+## Correction — Talos hypervisor OVAs are gone from GitHub releases (Aug 2026)
+
+The `talos` entry's assets were stale, found by a fetch dry-run against
+v1.13.8. Two separate errors:
+
+- `virtualbox-{arch}.ova` **never existed** as a release asset (checked back
+  to v0.8.0, 2020) — the earlier "verified" note covered resolution only,
+  never a fetch. There is no VirtualBox platform image anywhere (Image
+  Factory has no virtualbox target either); upstream's documented VirtualBox
+  path is the metal ISO. The variant now resolves to `metal-{arch}.iso`.
+- `vmware-{arch}.ova` last shipped in v1.7.7; v1.8.0 (Sep 2024) moved all
+  non-standard assets to Image Factory. The variant now resolves through the
+  new `KindTalosFactory` (vanilla schematic, tag from the GitHub release
+  feed). Factory publishes no checksum, so unlike before the OVA downloads
+  UNVERIFIED; the vSphere/ovftool caveats in the Notes still stand, and
+  `Variant.Kind` now optionally overrides `Source.Kind` because one image's
+  variants can come from different distribution channels.
+
 ## Next — not started
 
 7. **Skills → plugin.** Five `vbox-*` skills become hypervisor-neutral and

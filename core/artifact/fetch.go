@@ -83,6 +83,41 @@ func Fetch(ctx context.Context, r *Resolved, version, dir string, dryRun bool) (
 		res.Summary = fmt.Sprintf("%s\nversion: %s", out, rel.TagName)
 		return res, nil
 
+	case KindTalosFactory:
+		// Image Factory builds an image for every released Talos tag but has
+		// no "latest" notion of its own, so version discovery reuses the
+		// GitHub release feed (which also excludes prereleases). The factory
+		// publishes no checksum, so the download is unverified — unlike the
+		// pre-v1.8.0 GitHub assets this replaces.
+		tag := version
+		if tag == "" || tag == "latest" {
+			rel, err := githubRelease(ctx, talosRepo, "")
+			if err != nil {
+				return nil, err
+			}
+			tag = rel.TagName
+		} else if !strings.HasPrefix(tag, "v") {
+			tag = "v" + tag
+		}
+		dlURL := talosFactoryURL(r.Locator, tag, r.Asset)
+		dest := filepath.Join(dir, fmt.Sprintf("%s-%s-%s", r.Source, tag, r.Asset))
+		res := &FetchResult{Path: dest, Format: r.Format, Version: tag}
+		if dryRun {
+			sz := "unknown"
+			if size := headSize(ctx, dlURL); size > 0 {
+				sz = fmt.Sprintf("%.1f MB", float64(size)/1024/1024)
+			}
+			res.Summary = fmt.Sprintf("resolved %s %s from Image Factory\n  url: %s\n  size: %s\n  no published checksum — would download UNVERIFIED\n  would save to: %s",
+				r.Source, tag, dlURL, sz, dest)
+			return res, nil
+		}
+		out, err := fetchHTTPS(ctx, dlURL, dest, "")
+		if err != nil {
+			return nil, err
+		}
+		res.Summary = fmt.Sprintf("%s\nversion: %s\nWARNING: Image Factory publishes no checksum — unverified", out, tag)
+		return res, nil
+
 	case KindUbuntuCloud:
 		arch := r.Arch
 		if arch == "" {
@@ -174,6 +209,12 @@ func Fetch(ctx context.Context, r *Resolved, version, dir string, dryRun bool) (
 		return res, nil
 	}
 	return nil, fmt.Errorf("unhandled artifact kind %s", r.Kind)
+}
+
+// talosFactoryURL is the Image Factory download URL for a schematic ID, a
+// version tag ("v1.13.8"), and a target asset name ("vmware-amd64.ova").
+func talosFactoryURL(schematic, tag, asset string) string {
+	return "https://factory.talos.dev/image/" + schematic + "/" + tag + "/" + asset
 }
 
 // formatOf maps a machine file's extension to its format, falling back to the
