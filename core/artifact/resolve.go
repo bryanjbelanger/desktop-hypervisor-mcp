@@ -84,10 +84,11 @@ func Catalog() []Source {
 			// maintenance mode, then apply config over the network.
 			Name: "talos", Kind: KindGitHubAsset,
 			Desc: "Talos Linux (Kubernetes node OS): metal ISO on VirtualBox, Image Factory OVA on VMware",
-			Notes: "the vmware OVA is built for vSphere/ESXi and Image Factory publishes " +
-				"no checksum for it; importing it into Fusion/Workstation needs " +
-				"ovftool --lax --allowExtraConfig, and is unverified on the desktop " +
-				"products. Prefer talos-iso there until it is.",
+			Notes: "Image Factory publishes no checksum for the vmware OVA, so it " +
+				"downloads unverified. It imports into Fusion with plain ovftool " +
+				"(verified v1.13.8 / ovftool 5.0.0) and boots to maintenance mode, " +
+				"but ovftool defaults its NIC to bridged — switch it to NAT when " +
+				"host-side IP discovery via vmnet DHCP leases is wanted.",
 			Variants: []Variant{
 				{Family: "virtualbox", Locator: talosRepo,
 					Asset: "metal-{arch}.iso", Format: provider.FormatISO},

@@ -187,12 +187,16 @@ v1.13.8. Two separate errors:
   `ip_from_dhcp` (vmnet lease file, keyed by MAC) is the only mechanism that
   works out of the box. The contract was already built this way.
 
-- **Is the Talos vmware OVA importable into Fusion/Workstation?** The Sidero
-  guide targets vSphere/ESXi only (ESXi 6.7U2+, content libraries, govc). The
-  OVA may import into the desktop products with
-  `ovftool --lax --allowExtraConfig` — which the predecessor Fusion server
-  already passes — but that is unverified. `talos-iso` is the safe path on
-  desktop VMware until someone tries it. Recorded in the catalog Notes.
+- ~~Is the Talos vmware OVA importable into Fusion/Workstation?~~
+  **Answered (Aug 2026).** It is. The v1.13.8 Image Factory OVA (vmx-15,
+  pvscsi, vmxnet3) imported into Fusion with *plain* ovftool 5.0.0 — no
+  `--lax` needed; strict mode only drops the `disk.EnableUUID` ExtraConfig,
+  which `--allowExtraConfig` would keep and which desktop use doesn't need.
+  The VM boots to maintenance mode: DHCP lease on vmnet8, apid on :50000,
+  `talosctl version --insecure` answers with the server tag. One catch:
+  ovftool imports the NIC as **bridged**, so `ip_from_dhcp` (vmnet8 lease
+  file) sees nothing until `ethernet0.connectionType` is switched to `nat`.
+  Recorded in the catalog Notes.
 - **`vmware-fusion-local` version reads `1.17.0.25388279`** — that is the
   vmrun version, not the Fusion product version. Fine for logging, wrong if
   anything gates on a product version.
