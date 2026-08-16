@@ -82,7 +82,7 @@ func TestDialWithFallbackDoubleFailureExplains(t *testing.T) {
 	if !isDNSNotFound(err) {
 		t.Errorf("original not-found error should stay unwrappable: %v", err)
 	}
-	if !strings.Contains(err.Error(), "use-vc") || !strings.Contains(err.Error(), "VMware NAT") {
+	if !strings.Contains(err.Error(), "public nameserver") || !strings.Contains(err.Error(), "VMware NAT") {
 		t.Errorf("double failure should suggest the resolv.conf workaround, got: %v", err)
 	}
 }

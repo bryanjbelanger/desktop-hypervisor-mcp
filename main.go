@@ -3,6 +3,15 @@
 //
 // The neutral tool surface expresses intent; provider mechanism stays behind
 // execute_command. Capabilities decide what succeeds — see provider/contract.go.
+
+// VMware's NAT DNS proxy miscounts message sections when echoing an EDNS0 OPT
+// record (it prepends the OPT to the answer section while still advertising
+// ANCOUNT=1/ARCOUNT=0, hiding the real A/AAAA record) and refuses TCP on
+// port 53, so Go's default resolver — which attaches EDNS0 to every query —
+// gets "no such host" inside any VMware NAT guest. glibc works there only
+// because it never sends EDNS0. Default it off; GODEBUG env still overrides.
+//
+//go:debug netedns0=0
 package main
 
 import (

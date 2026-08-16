@@ -1,12 +1,13 @@
-// Shared HTTP client with DNS resilience for VMware NAT guests.
+// Shared HTTP client with DNS resilience for broken NAT DNS proxies.
 //
-// Go's pure-Go resolver (the default in CGO_ENABLED=0 release binaries) fails
-// with "no such host" against VMware's NAT DNS proxy, which mishandles some
-// UDP queries that glibc's resolver tolerates — the proxy answers the same
-// queries correctly over TCP. Every download and metadata path here shares
-// one transport whose dialer retries name resolution over TCP DNS when the
-// default lookup reports not-found, so the server works unmodified inside a
-// VMware NAT guest.
+// The primary defense against VMware's NAT DNS proxy — which corrupts EDNS0
+// responses so Go's default resolver gets "no such host" — is the
+// //go:debug netedns0=0 directive in main.go; see the comment there. This
+// transport is the second layer for other resolver breakage: every download
+// and metadata path shares one transport whose dialer retries name
+// resolution over TCP DNS when the default lookup reports not-found. (The
+// VMware Fusion proxy refuses TCP on port 53, so there the retry fails fast
+// and the error steers the user to a public nameserver instead.)
 package artifact
 
 import (
@@ -52,7 +53,7 @@ func dialWithFallback(ctx context.Context, network, addr string, dial dialFunc, 
 	}
 	addrs, lookupErr := lookup(ctx, host)
 	if lookupErr != nil || len(addrs) == 0 {
-		return nil, fmt.Errorf("%w (retry over TCP DNS also failed; if this host is a VMware NAT guest its DNS proxy may be mishandling UDP — add 'options use-vc' to /etc/resolv.conf or point it at a public nameserver)", err)
+		return nil, fmt.Errorf("%w (retry over TCP DNS also failed; if this host is a VMware NAT guest its DNS proxy is likely at fault — point /etc/resolv.conf at a public nameserver, e.g. 'nameserver 1.1.1.1', and make sure GODEBUG does not re-enable EDNS0: this binary defaults to netedns0=0)", err)
 	}
 	for _, a := range addrs {
 		c, dialErr := dial(ctx, network, net.JoinHostPort(a.IP.String(), port))
